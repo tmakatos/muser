@@ -549,10 +549,6 @@ static int libmuser_mmap_dma(struct file *f, struct vm_area_struct *vma)
 
 	BUG_ON(mudev == NULL);
 
-	muser_info("mmap_dma: end 0x%lX - start 0x%lX (0x%lX), off = 0x%lX",
-		   vma->vm_end, vma->vm_start, vma->vm_end - vma->vm_start,
-		   vma->vm_pgoff);
-
 	if (unlikely(mudev->dma_map == NULL)) {
 		muser_dbg("no pending DMA map operation");
 		return -EINVAL;
@@ -560,6 +556,13 @@ static int libmuser_mmap_dma(struct file *f, struct vm_area_struct *vma)
 
 	dma_map = mudev->dma_map;
 	length = round_up(dma_map->length, PAGE_SIZE);
+
+	muser_info("mmap_dma: %pD vma=%#lx-%#lx iova=%#lx-%#lx, off = 0x%lX",
+	           vma->vm_file,
+		   vma->vm_start, vma->vm_end, dma_map->iova,
+	           dma_map->iova + dma_map->length,
+		   vma->vm_pgoff);
+
 	if (unlikely(vma->vm_end - vma->vm_start != length)) {
 		muser_dbg("expected mmap of 0x%lx bytes, got 0x%lx instead",
 			  vma->vm_end - vma->vm_start, length);
@@ -699,8 +702,6 @@ static bool has_anonymous_pages(struct vfio_dma_mapping *dma_map)
 
 	for (i = 0; i < nr_pages; i++) {
 		if (PageAnon(dma_map->pages[i])) {
-			muser_dbg("ignore IOVA=%lx, page(s) not shared",
-				  dma_map->iova);
 			return true;
 		}
 	}
@@ -736,8 +737,12 @@ static int muser_iommu_dma_map(struct muser_dev *mudev,
 		goto out;
 
 	/* skip anonymous pages */
-	if (has_anonymous_pages(mudev->dma_map))
+	if (has_anonymous_pages(mudev->dma_map)) {
+		muser_info("ignore vma=%#llx-%#llx iova=%lx-%lx, page(s) not shared",
+			  map->vaddr, map->vaddr + map->size,
+		          dma_map->iova, dma_map->iova + dma_map->length);
 		goto put_pages;
+	}
 
 	ret = muser_process_dma_map(mudev, map->flags);
 	if (ret)
