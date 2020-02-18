@@ -540,6 +540,20 @@ free_pg:
 	return ret;
 }
 
+static void find_file_for_vaddr(unsigned long long vaddr, char *buf, size_t size)
+{
+	struct vm_area_struct *vma = find_vma(current->mm, vaddr);
+	if (!vma) {
+		muser_info("XXX no VMA for vaddr=%#llx", vaddr);
+		return;
+	}
+	if (!vma->vm_file) {
+		muser_info("XXX no file for vaddr=%#llx", vaddr);
+		return;
+	}
+	snprintf(buf, size, "%pD", vma->vm_file);
+}
+
 static int libmuser_mmap_dma(struct file *f, struct vm_area_struct *vma)
 {
 	int err;
@@ -556,12 +570,6 @@ static int libmuser_mmap_dma(struct file *f, struct vm_area_struct *vma)
 
 	dma_map = mudev->dma_map;
 	length = round_up(dma_map->length, PAGE_SIZE);
-
-	muser_info("mmap_dma: %pD vma=%#lx-%#lx iova=%#lx-%#lx, off = 0x%lX",
-	           vma->vm_file,
-		   vma->vm_start, vma->vm_end, dma_map->iova,
-	           dma_map->iova + dma_map->length,
-		   vma->vm_pgoff);
 
 	if (unlikely(vma->vm_end - vma->vm_start != length)) {
 		muser_dbg("expected mmap of 0x%lx bytes, got 0x%lx instead",
@@ -714,6 +722,7 @@ static int muser_iommu_dma_map(struct muser_dev *mudev,
 {
 	struct vfio_dma_mapping *dma_map;
 	int ret;
+	char buf[0x100] = {0};
 
 	/* TODO: support multiple DMA map operations in parallel */
 	mutex_lock(&mudev->dev_lock);
@@ -735,6 +744,10 @@ static int muser_iommu_dma_map(struct muser_dev *mudev,
 	ret = get_dma_map(mudev, dma_map, map);
 	if (ret)
 		goto out;
+
+	find_file_for_vaddr(map->vaddr, buf, ARRAY_SIZE(buf));
+	muser_info("mmap_dma: %s vaddr=%#llx iova=%#llx-%#llx",
+	           buf, map->vaddr, map->iova, map->iova + map->size);
 
 	/* skip anonymous pages */
 	if (has_anonymous_pages(mudev->dma_map)) {
