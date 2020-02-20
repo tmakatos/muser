@@ -543,8 +543,9 @@ muser_dma_unmap(lm_ctx_t *lm_ctx, struct muser_cmd *cmd)
 {
     int err;
 
-    lm_log(lm_ctx, LM_INF, "removing DMA region %#lx@%#lx\n",
-           cmd->mmap.request.len, cmd->mmap.request.addr);
+    lm_log(lm_ctx, LM_INF, "removing DMA region %#lx0%#lx\n",
+           cmd->mmap.request.addr,
+           cmd->mmap.request.len + cmd->mmap.request.addr);
 
     if (lm_ctx->dma == NULL) {
         lm_log(lm_ctx, LM_ERR, "DMA not initialized\n");
