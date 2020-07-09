@@ -232,11 +232,13 @@ caps_create(const lm_cap_t *lm_caps, int nr_caps)
             goto out;
         }
 
+#define ALIGN(x,a)              __ALIGN_MASK(x,(typeof(x))(a)-1)
+#define __ALIGN_MASK(x,mask)    (((x)+(mask))&~(mask))
+
         caps->caps[i].id = lm_caps[i].id;
         caps->caps[i].fn = lm_caps[i].fn;
-        /* FIXME PCI capabilities must be dword aligned. */
         caps->caps[i].start = prev_end + 1;
-        caps->caps[i].end = prev_end = caps->caps[i].start + lm_caps[i].size - 1;
+        caps->caps[i].end = prev_end = caps->caps[i].start + ALIGN(lm_caps[i].size, 8) - 1;
     }
     caps->nr_caps = nr_caps;
 

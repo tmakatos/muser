@@ -54,6 +54,8 @@
 #include <time.h>
 #include <sys/select.h>
 
+#include <linux/version.h>
+
 #include "../kmod/muser.h"
 #include "muser.h"
 #include "muser_priv.h"
@@ -699,6 +701,72 @@ dev_get_sparse_mmap_cap(lm_ctx_t *lm_ctx, lm_reg_info_t *lm_reg,
     return 0;
 }
 
+static int
+dev_get_msix_mappable_cap(lm_ctx_t *lm_ctx, lm_reg_info_t *lm_reg,
+                        struct vfio_region_info *vfio_reg)
+{
+    struct vfio_region_info_cap_type *type = NULL;
+
+    size_t size;
+    ssize_t ret;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
+    #pragma message "MSIX won't work on old Linux Kernel"
+    (void)lm_ctx;
+    (void)lm_reg;
+    (void)vfio_reg;
+    return -EINVAL;
+#else
+    if (vfio_reg->index != 0) {
+        lm_log(lm_ctx, LM_ERR, "'cause of libmuser limitations, MSIX structures can only be placed on BAR 0\n");
+        return -EINVAL;
+    }
+
+    if (!(lm_reg->flags & LM_REG_FLAG_MMAP) || !(lm_reg->flags & LM_REG_FLAG_MEM)) {
+        lm_log(lm_ctx, LM_ERR, "MSIX region needs to have MEM and MMAP flags set\n");
+        return -EINVAL;
+    }
+
+    size = sizeof(*type);
+
+    /*
+     * If vfio_reg does not have enough space to accommodate  sparse info then
+     * set the argsz with the expected size and return. Vfio client will call
+     * back after reallocating the vfio_reg
+     */
+
+    if (vfio_reg->argsz < size + sizeof(*vfio_reg)) {
+        lm_log(lm_ctx, LM_DBG, "vfio_reg too small=%d\n", vfio_reg->argsz);
+        vfio_reg->argsz = size + sizeof(*vfio_reg);
+        vfio_reg->cap_offset = 0;
+        return 0;
+    }
+
+    lm_log(lm_ctx, LM_DBG, "%s: size %llu\n", __func__, size);
+
+    type = calloc(1, size);
+    if (type == NULL)
+        return -ENOMEM;
+
+    type->header.id = VFIO_REGION_INFO_CAP_MSIX_MAPPABLE;
+    type->header.version = 1;
+    type->header.next = 0;
+
+    /* write the type mmap cap info to vfio-client user pages */
+    ret = write(lm_ctx->fd, type, size);
+    if (ret != (ssize_t)size) {
+        free(type);
+        return -EIO;
+    }
+
+    vfio_reg->flags |= VFIO_REGION_INFO_FLAG_CAPS;
+    vfio_reg->cap_offset = sizeof(*vfio_reg);
+
+    free(type);
+    return 0;
+#endif
+}
+
 #define LM_REGION_SHIFT 40
 #define LM_REGION_MASK  ((1ULL << LM_REGION_SHIFT) - 1)
 
@@ -736,7 +804,12 @@ dev_get_reginfo(lm_ctx_t *lm_ctx, struct vfio_region_info *vfio_reg)
     vfio_reg->flags = lm_reg->flags;
     vfio_reg->size = lm_reg->size;
 
-    if (lm_reg->mmap_areas != NULL) {
+    if (lm_reg->is_msix) {
+        err = dev_get_msix_mappable_cap(lm_ctx, lm_reg, vfio_reg);
+        if (err) {
+            return err;
+        }
+    } else if (lm_reg->mmap_areas != NULL) {
         err = dev_get_sparse_mmap_cap(lm_ctx, lm_reg, vfio_reg);
         if (err) {
             return err;

@@ -131,6 +131,11 @@ void *lm_mmap(lm_ctx_t * lm_ctx, off_t offset, size_t length);
 typedef struct  {
 
     /*
+     * Will this BAR contains MSIX structures?
+     */
+    uint8_t             is_msix;
+
+    /*
      * Region flags, see LM_REG_FLAG_XXX above.
      */
     uint32_t            flags;
