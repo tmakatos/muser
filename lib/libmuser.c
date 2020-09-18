@@ -62,29 +62,29 @@
 
 #include "vfio_user.h"
 
-#define VFIO_USER_MAX_PAYLOAD_SIZE	(4096)
-#define VFIO_USER_MAX_MEM_REGIONS	(8)
-#define VFIO_USER_MAX_NUM_FDS		(256)
+#define VFIO_USER_MAX_PAYLOAD_SIZE  (4096)
+#define VFIO_USER_MAX_MEM_REGIONS   (8)
+#define VFIO_USER_MAX_NUM_FDS   (256)
 
 struct vfio_user_request {
-	struct vfio_user_header hdr;
-	uint8_t payload[VFIO_USER_MAX_PAYLOAD_SIZE];
-	int fds[VFIO_USER_MAX_NUM_FDS];
+    struct vfio_user_header hdr;
+    uint8_t payload[VFIO_USER_MAX_PAYLOAD_SIZE];
+    int fds[VFIO_USER_MAX_NUM_FDS];
 };
 
 static const char *vfio_user_message_str[VFIO_USER_MAX] = {
-	[VFIO_USER_VERSION]			= "VFIO_USER_VERSION",
-	[VFIO_USER_DMA_MAP]			= "VFIO_USER_DMA_MAP",
-	[VFIO_USER_DMA_UNMAP]			= "VFIO_USER_DMA_UNMAP",
-	[VFIO_USER_DEVICE_GET_INFO]		= "VFIO_USER_DEVICE_GET_INFO",
-	[VFIO_USER_DEVICE_GET_REGION_INFO]	= "VFIO_USER_DEVICE_GET_REGION_INFO",
-	[VFIO_USER_DEVICE_GET_IRQ_INFO]		= "VFIO_USER_DEVICE_GET_IRQ_INFO",
-	[VFIO_USER_DEVICE_SET_IRQS]		= "VFIO_USER_DEVICE_SET_IRQS",
-	[VFIO_USER_REGION_READ]			= "VFIO_USER_REGION_READ",
-	[VFIO_USER_REGION_WRITE]		= "VFIO_USER_REGION_WRITE",
-	[VFIO_USER_DMA_READ]			= "VFIO_USER_DMA_READ",
-	[VFIO_USER_DMA_WRITE]			= "VFIO_USER_DMA_WRITE",
-	[VFIO_USER_DEVICE_RESET]		= "VFIO_USER_DEVICE_RESET",
+    [VFIO_USER_VERSION]                 = "VFIO_USER_VERSION",
+    [VFIO_USER_DMA_MAP]                 = "VFIO_USER_DMA_MAP",
+    [VFIO_USER_DMA_UNMAP]               = "VFIO_USER_DMA_UNMAP",
+    [VFIO_USER_DEVICE_GET_INFO]         = "VFIO_USER_DEVICE_GET_INFO",
+    [VFIO_USER_DEVICE_GET_REGION_INFO]  = "VFIO_USER_DEVICE_GET_REGION_INFO",
+    [VFIO_USER_DEVICE_GET_IRQ_INFO]     = "VFIO_USER_DEVICE_GET_IRQ_INFO",
+    [VFIO_USER_DEVICE_SET_IRQS]         = "VFIO_USER_DEVICE_SET_IRQS",
+    [VFIO_USER_REGION_READ]             = "VFIO_USER_REGION_READ",
+    [VFIO_USER_REGION_WRITE]            = "VFIO_USER_REGION_WRITE",
+    [VFIO_USER_DMA_READ]                = "VFIO_USER_DMA_READ",
+    [VFIO_USER_DMA_WRITE]               = "VFIO_USER_DMA_WRITE",
+    [VFIO_USER_DEVICE_RESET]            = "VFIO_USER_DEVICE_RESET",
 };
 
 #define IOMMU_GRP_NAME "iommu_group"
@@ -228,7 +228,7 @@ open_sock(lm_ctx_t *lm_ctx)
 
     fd = accept(lm_ctx->fd, NULL, NULL);
     if (fd < 0) {
-	return fd;
+        return fd;
     }
 
     /* Send a header VFIO_USER_VERSION message */
@@ -246,8 +246,8 @@ retry:
     ret = recv(fd, &cmd, sizeof(struct vfio_user_header), lm_ctx->sock_flags);
     if (ret < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
-		goto retry;
-	}
+            goto retry;
+        }
         lm_log(lm_ctx, LM_ERR, "failed to recv VFIO_USER_VERSION\n");
         return -EFAULT;
     }
@@ -266,64 +266,64 @@ close_sock(lm_ctx_t *lm_ctx)
 static int
 read_fd_message(int sockfd, char *buf, int buflen, int *fds, int fd_num, int sock_flags)
 {
-	struct iovec iov;
-	struct msghdr msgh;
-	size_t fdsize = fd_num * sizeof(int);
-	char control[CMSG_SPACE(fdsize)];
-	struct cmsghdr *cmsg;
-	int ret;
+    struct iovec iov;
+    struct msghdr msgh;
+    size_t fdsize = fd_num * sizeof(int);
+    char control[CMSG_SPACE(fdsize)];
+    struct cmsghdr *cmsg;
+    int ret;
 
-	memset(&msgh, 0, sizeof(msgh));
-	iov.iov_base = buf;
-	iov.iov_len  = buflen;
+    memset(&msgh, 0, sizeof(msgh));
+    iov.iov_base = buf;
+    iov.iov_len  = buflen;
 
-	msgh.msg_iov = &iov;
-	msgh.msg_iovlen = 1;
-	msgh.msg_control = control;
-	msgh.msg_controllen = sizeof(control);
+    msgh.msg_iov = &iov;
+    msgh.msg_iovlen = 1;
+    msgh.msg_control = control;
+    msgh.msg_controllen = sizeof(control);
 
-	ret = recvmsg(sockfd, &msgh, sock_flags);
-	if (ret <= 0) {
-		return ret;
-	}
+    ret = recvmsg(sockfd, &msgh, sock_flags);
+    if (ret <= 0) {
+        return ret;
+    }
 
-	if (msgh.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) {
-		return -1;
-	}
+    if (msgh.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) {
+        return -1;
+    }
 
-	for (cmsg = CMSG_FIRSTHDR(&msgh); cmsg != NULL;
-		cmsg = CMSG_NXTHDR(&msgh, cmsg)) {
-		if ((cmsg->cmsg_level == SOL_SOCKET) &&
-			(cmsg->cmsg_type == SCM_RIGHTS)) {
-			memcpy(fds, CMSG_DATA(cmsg), fdsize);
-			break;
-		}
-	}
+    for (cmsg = CMSG_FIRSTHDR(&msgh); cmsg != NULL;
+            cmsg = CMSG_NXTHDR(&msgh, cmsg)) {
+        if ((cmsg->cmsg_level == SOL_SOCKET) &&
+                (cmsg->cmsg_type == SCM_RIGHTS)) {
+            memcpy(fds, CMSG_DATA(cmsg), fdsize);
+            break;
+        }
+    }
 
-	return ret;
+    return ret;
 }
 
 static int
 get_request_sock(lm_ctx_t *lm_ctx, struct vfio_user_request *cmd)
 {
-	int ret;
-	size_t sz_payload;
+    int ret;
+    size_t sz_payload;
 
-	ret = read_fd_message(lm_ctx->conn_fd, (char *)cmd, sizeof(struct vfio_user_header), cmd->fds, VFIO_USER_MAX_NUM_FDS, lm_ctx->sock_flags);
-	if (ret <= 0) {
-		return ret;
-	}
+    ret = read_fd_message(lm_ctx->conn_fd, (char *)cmd, sizeof(struct vfio_user_header), cmd->fds, VFIO_USER_MAX_NUM_FDS, lm_ctx->sock_flags);
+    if (ret <= 0) {
+        return ret;
+    }
 
-	if (cmd->hdr.msg_size > sizeof(struct vfio_user_header)) {
-		sz_payload = cmd->hdr.msg_size - sizeof(struct vfio_user_header);
-		ret = read(lm_ctx->conn_fd, cmd->payload, sz_payload);
-		if (ret <= 0) {
-			return ret;
-		}
-		ret += sizeof(struct vfio_user_header);
-	}
+    if (cmd->hdr.msg_size > sizeof(struct vfio_user_header)) {
+        sz_payload = cmd->hdr.msg_size - sizeof(struct vfio_user_header);
+        ret = read(lm_ctx->conn_fd, cmd->payload, sz_payload);
+        if (ret <= 0) {
+            return ret;
+        }
+        ret += sizeof(struct vfio_user_header);
+    }
 
-	return ret;
+    return ret;
 }
 
 static int
@@ -842,26 +842,26 @@ muser_dma_map(lm_ctx_t *lm_ctx, struct muser_cmd *cmd)
 
 int
 muser_send_fds(int sock, int *fds, size_t count) {
-	struct msghdr msg = { 0 };
-	size_t size = count * sizeof *fds;
-	char buf[CMSG_SPACE(size)];
-	memset(buf, '\0', sizeof(buf));
+    struct msghdr msg = { 0 };
+    size_t size = count * sizeof *fds;
+    char buf[CMSG_SPACE(size)];
+    memset(buf, '\0', sizeof(buf));
 
-	/* XXX requires at least one byte */
-	struct iovec io = { .iov_base = "\0", .iov_len = 1 };
+    /* XXX requires at least one byte */
+    struct iovec io = { .iov_base = "\0", .iov_len = 1 };
 
-	msg.msg_iov = &io;
-	msg.msg_iovlen = 1;
-	msg.msg_control = buf;
-	msg.msg_controllen = sizeof(buf);
+    msg.msg_iov = &io;
+    msg.msg_iovlen = 1;
+    msg.msg_control = buf;
+    msg.msg_controllen = sizeof(buf);
 
-	struct cmsghdr * cmsg = CMSG_FIRSTHDR(&msg);
-	cmsg->cmsg_level = SOL_SOCKET;
-	cmsg->cmsg_type = SCM_RIGHTS;
-	cmsg->cmsg_len = CMSG_LEN(size);
-	memcpy(CMSG_DATA(cmsg), fds, size);
-	msg.msg_controllen = CMSG_SPACE(size);
-	return sendmsg(sock, &msg, 0);
+    struct cmsghdr * cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    cmsg->cmsg_len = CMSG_LEN(size);
+    memcpy(CMSG_DATA(cmsg), fds, size);
+    msg.msg_controllen = CMSG_SPACE(size);
+    return sendmsg(sock, &msg, 0);
 }
 
 /*
@@ -1116,9 +1116,9 @@ process_request(lm_ctx_t *lm_ctx)
         } else {
             lm_log(lm_ctx, LM_ERR, "end of file: %m\n");
         }
-	close(lm_ctx->conn_fd);
-	lm_ctx->conn_fd = -1;
-	dma_controller_remove_regions(lm_ctx->dma);
+        close(lm_ctx->conn_fd);
+        lm_ctx->conn_fd = -1;
+        dma_controller_remove_regions(lm_ctx->dma);
         return -ENOTCONN;
     }
 
@@ -1127,87 +1127,87 @@ process_request(lm_ctx_t *lm_ctx)
 
     switch(cmd.hdr.command) {
         case VFIO_USER_DEVICE_GET_INFO:
-		dev_info = (struct vfio_device_info *)cmd.payload;
-		dev_get_info(dev_info);
-		assert(cmd.hdr.msg_size == (sizeof(struct vfio_user_header) + sizeof(*dev_info)));
-        	break;
-	case VFIO_USER_DEVICE_GET_REGION_INFO:
-		vfio_reg = (struct vfio_region_info *)cmd.payload;
-		err = dev_get_reginfo(lm_ctx, vfio_reg);
-		if (err < 0) {
-            		lm_log(lm_ctx, LM_ERR, "VFIO_USER_DEVICE_GET_REGION_INFO failed: %m\n");
-			cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-			cmd.hdr.flags.error = true;
-			cmd.hdr.error_no = EFAULT;
-		} else {
-			cmd.hdr.msg_size = sizeof(struct vfio_user_header) + err;
-		}
-		break;
+            dev_info = (struct vfio_device_info *)cmd.payload;
+            dev_get_info(dev_info);
+            assert(cmd.hdr.msg_size == (sizeof(struct vfio_user_header) + sizeof(*dev_info)));
+            break;
+        case VFIO_USER_DEVICE_GET_REGION_INFO:
+            vfio_reg = (struct vfio_region_info *)cmd.payload;
+            err = dev_get_reginfo(lm_ctx, vfio_reg);
+            if (err < 0) {
+                lm_log(lm_ctx, LM_ERR, "VFIO_USER_DEVICE_GET_REGION_INFO failed: %m\n");
+                cmd.hdr.msg_size = sizeof(struct vfio_user_header);
+                cmd.hdr.flags.error = true;
+                cmd.hdr.error_no = EFAULT;
+            } else {
+                cmd.hdr.msg_size = sizeof(struct vfio_user_header) + err;
+            }
+            break;
         case VFIO_USER_DMA_MAP:
-	case VFIO_USER_DMA_UNMAP:
-		num_regions = (cmd.hdr.msg_size - sizeof(struct vfio_user_header)) / sizeof(struct vfio_user_dma_region);
-		assert(num_regions <= VFIO_USER_MAX_MEM_REGIONS);
-		region = (struct vfio_user_dma_region *)cmd.payload;
-		/* ACK */
-		cmd.hdr.msg_size = sizeof(struct vfio_user_header);
+        case VFIO_USER_DMA_UNMAP:
+            num_regions = (cmd.hdr.msg_size - sizeof(struct vfio_user_header)) / sizeof(struct vfio_user_dma_region);
+            assert(num_regions <= VFIO_USER_MAX_MEM_REGIONS);
+            region = (struct vfio_user_dma_region *)cmd.payload;
+            /* ACK */
+            cmd.hdr.msg_size = sizeof(struct vfio_user_header);
 
-		for (i = 0; i < num_regions; i++) {
-			if (cmd.hdr.command == VFIO_USER_DMA_MAP) {
-            			struct muser_cmd muser_cmd = {
-					.type = MUSER_DMA_MMAP,
-					.mmap.request.fd = cmd.fds[i],
-					.mmap.request.addr = region[i].addr,
-					.mmap.request.len = region[i].size,
-					.mmap.request.offset = region[i].offset,
-    			        };
-	   			err = muser_dma_map(lm_ctx, &muser_cmd);
-			} else {
-				assert(lm_ctx->unmap_dma != NULL);
-				err = dma_controller_remove_region(lm_ctx->dma,
-						region[i].addr, region[i].size,
-						lm_ctx->unmap_dma, lm_ctx->pvt);
-			}
+            for (i = 0; i < num_regions; i++) {
+                if (cmd.hdr.command == VFIO_USER_DMA_MAP) {
+                    struct muser_cmd muser_cmd = {
+                        .type = MUSER_DMA_MMAP,
+                        .mmap.request.fd = cmd.fds[i],
+                        .mmap.request.addr = region[i].addr,
+                        .mmap.request.len = region[i].size,
+                        .mmap.request.offset = region[i].offset,
+                    };
+                    err = muser_dma_map(lm_ctx, &muser_cmd);
+                } else {
+                    assert(lm_ctx->unmap_dma != NULL);
+                    err = dma_controller_remove_region(lm_ctx->dma,
+                            region[i].addr, region[i].size,
+                            lm_ctx->unmap_dma, lm_ctx->pvt);
+                }
 
-			if (err != 0) {
-            			lm_log(lm_ctx, LM_ERR, "DMA MAP/UNMAP failed: %m\n");
-				cmd.hdr.flags.error = true;
-				break;
-			}
-		}
-		break;
-	case VFIO_USER_REGION_READ:
-	case VFIO_USER_REGION_WRITE:
-		access = (struct vfio_user_region_access *)cmd.payload;
-		err = do_access(lm_ctx, access->region, (void *)access->data, access->count, access->offset, cmd.hdr.command == VFIO_USER_REGION_WRITE);
-		if (err <= 0) {
-            		lm_log(lm_ctx, LM_ERR, "do access failed: %m\n");
-			cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-			cmd.hdr.flags.error = true;
-		} else if (cmd.hdr.command == VFIO_USER_REGION_WRITE) {
-			cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-		}
-		break;
-	case VFIO_USER_DEVICE_GET_IRQ_INFO:
-		irq_info = (struct vfio_irq_info *)cmd.payload;
-		err = dev_get_irqinfo(lm_ctx, irq_info);
-		if (err < 0) {
-			lm_log(lm_ctx, LM_ERR, "do get irq info failed: %m\n");
-			cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-			cmd.hdr.flags.error = true;
-		}
-		break;
-	case VFIO_DEVICE_SET_IRQS:
-		irq_set = (struct vfio_irq_set *)cmd.payload;
-		err = dev_set_irqs(lm_ctx, irq_set, cmd.fds);
-		if (err < 0) {
-			lm_log(lm_ctx, LM_ERR, "do set irqs failed: %m\n");
-			cmd.hdr.flags.error = true;
-		}
-		cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-		break;
+                if (err != 0) {
+                    lm_log(lm_ctx, LM_ERR, "DMA MAP/UNMAP failed: %m\n");
+                    cmd.hdr.flags.error = true;
+                    break;
+                }
+            }
+            break;
+        case VFIO_USER_REGION_READ:
+        case VFIO_USER_REGION_WRITE:
+            access = (struct vfio_user_region_access *)cmd.payload;
+            err = do_access(lm_ctx, access->region, (void *)access->data, access->count, access->offset, cmd.hdr.command == VFIO_USER_REGION_WRITE);
+            if (err <= 0) {
+                lm_log(lm_ctx, LM_ERR, "do access failed: %m\n");
+                cmd.hdr.msg_size = sizeof(struct vfio_user_header);
+                cmd.hdr.flags.error = true;
+            } else if (cmd.hdr.command == VFIO_USER_REGION_WRITE) {
+                cmd.hdr.msg_size = sizeof(struct vfio_user_header);
+            }
+            break;
+        case VFIO_USER_DEVICE_GET_IRQ_INFO:
+            irq_info = (struct vfio_irq_info *)cmd.payload;
+            err = dev_get_irqinfo(lm_ctx, irq_info);
+            if (err < 0) {
+                lm_log(lm_ctx, LM_ERR, "do get irq info failed: %m\n");
+                cmd.hdr.msg_size = sizeof(struct vfio_user_header);
+                cmd.hdr.flags.error = true;
+            }
+            break;
+        case VFIO_DEVICE_SET_IRQS:
+            irq_set = (struct vfio_irq_set *)cmd.payload;
+            err = dev_set_irqs(lm_ctx, irq_set, cmd.fds);
+            if (err < 0) {
+                lm_log(lm_ctx, LM_ERR, "do set irqs failed: %m\n");
+                cmd.hdr.flags.error = true;
+            }
+            cmd.hdr.msg_size = sizeof(struct vfio_user_header);
+            break;
 
-	default:
-	assert(0);
+        default:
+            assert(0);
     }
 
     cmd.hdr.flags.type = VFIO_USER_MESSAGE_REPLY;
@@ -1469,9 +1469,9 @@ lm_ctx_create(const lm_dev_info_t *dev_info)
     }
 
     if (max_ivs > VFIO_USER_MAX_NUM_FDS) {
-	lm_log(lm_ctx, LM_ERR, "can support up to %d irqs\n", VFIO_USER_MAX_NUM_FDS);
-	errno = EINVAL;
-	return NULL;
+        lm_log(lm_ctx, LM_ERR, "can support up to %d irqs\n", VFIO_USER_MAX_NUM_FDS);
+        errno = EINVAL;
+        return NULL;
     }
 
     // Allocate an lm_ctx with room for the irq vectors.
@@ -1591,7 +1591,7 @@ lm_addr_to_sg(lm_ctx_t *lm_ctx, dma_addr_t dma_addr,
 
 inline int
 lm_map_sg(lm_ctx_t *lm_ctx, const dma_sg_t *sg,
-	  struct iovec *iov, int cnt)
+        struct iovec *iov, int cnt)
 {
     if (unlikely(lm_ctx->unmap_dma == NULL)) {
         errno = EINVAL;
