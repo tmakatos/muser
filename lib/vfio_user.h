@@ -4,6 +4,10 @@
  *   Copyright (c) Intel Corporation.
  *   All rights reserved.
  *
+ * Authors: Changpeng Liu <changpeng.liu@nutanix.com>
+ *          Thanos Makatos <thanos@nutanix.com>
+ *
+ *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
  *   are met:
