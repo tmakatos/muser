@@ -1090,17 +1090,142 @@ out:
     return err;
 }
 
+static void
+handle_device_get_info(struct vfio_user_request *cmd)
+{
+    struct vfio_device_info *dev_info;
+
+    assert(cmd != NULL);
+
+    dev_info = (struct vfio_device_info *)cmd->payload;
+    dev_get_info(dev_info);
+    assert(cmd->hdr.msg_size == (sizeof(struct vfio_user_header) + sizeof(*dev_info)));
+}
+
+static void
+handle_device_get_region_info(lm_ctx_t *lm_ctx, struct vfio_user_request *cmd)
+{
+    struct vfio_region_info *vfio_reg;
+    int ret;
+
+    assert(lm_ctx != NULL);
+    assert(cmd != NULL);
+
+    vfio_reg = (struct vfio_region_info *)cmd->payload;
+    ret = dev_get_reginfo(lm_ctx, vfio_reg);
+    if (ret < 0) {
+        lm_log(lm_ctx, LM_ERR, "VFIO_USER_DEVICE_GET_REGION_INFO failed: %m\n");
+        cmd->hdr.msg_size = sizeof(struct vfio_user_header);
+        cmd->hdr.flags.error = true;
+        cmd->hdr.error_no = EFAULT;
+    } else {
+        cmd->hdr.msg_size = sizeof(struct vfio_user_header) + ret;
+    }
+}
+
+static void
+handle_dma_map_or_unmap(lm_ctx_t *lm_ctx, struct vfio_user_request *cmd)
+{
+    struct vfio_user_dma_region *region;
+    int ret;
+    uint32_t i, num_regions;
+
+    assert(lm_ctx != NULL);
+    assert(cmd != NULL);
+
+    num_regions = (cmd->hdr.msg_size - sizeof(struct vfio_user_header)) / sizeof(struct vfio_user_dma_region);
+    assert(num_regions <= VFIO_USER_MAX_MEM_REGIONS);
+    region = (struct vfio_user_dma_region *)cmd->payload;
+    /* ACK */
+    cmd->hdr.msg_size = sizeof(struct vfio_user_header);
+
+    for (i = 0; i < num_regions; i++) {
+        if (cmd->hdr.command == VFIO_USER_DMA_MAP) {
+            struct muser_cmd muser_cmd = {
+                .type = MUSER_DMA_MMAP,
+                .mmap.request.fd = cmd->fds[i],
+                .mmap.request.addr = region[i].addr,
+                .mmap.request.len = region[i].size,
+                .mmap.request.offset = region[i].offset,
+            };
+            ret = muser_dma_map(lm_ctx, &muser_cmd);
+        } else {
+            assert(lm_ctx->unmap_dma != NULL);
+            ret = dma_controller_remove_region(lm_ctx->dma,
+                    region[i].addr, region[i].size,
+                    lm_ctx->unmap_dma, lm_ctx->pvt);
+        }
+
+        if (ret != 0) {
+            lm_log(lm_ctx, LM_ERR, "DMA MAP/UNMAP failed: %m\n");
+            cmd->hdr.flags.error = true;
+            break;
+        }
+    }
+}
+
+static void
+handle_region_rw(lm_ctx_t *lm_ctx, struct vfio_user_request *cmd)
+{
+    int ret;
+    struct vfio_user_region_access *region_access;
+
+    assert(lm_ctx != NULL);
+    assert(cmd != NULL);
+
+    region_access = (struct vfio_user_region_access *)cmd->payload;
+    ret = do_access(lm_ctx, region_access->region, (void *)region_access->data,
+                    region_access->count, region_access->offset,
+                    cmd->hdr.command == VFIO_USER_REGION_WRITE);
+    if (ret <= 0) {
+        lm_log(lm_ctx, LM_ERR, "do access failed: %m\n");
+        cmd->hdr.msg_size = sizeof(struct vfio_user_header);
+        cmd->hdr.flags.error = true;
+    } else if (cmd->hdr.command == VFIO_USER_REGION_WRITE) {
+        cmd->hdr.msg_size = sizeof(struct vfio_user_header);
+    }
+}
+
+static void
+handle_device_get_irq_info(lm_ctx_t *lm_ctx, struct vfio_user_request *cmd)
+{
+    int ret;
+    struct vfio_irq_info *irq_info;
+
+    assert(lm_ctx != NULL);
+    assert(cmd != NULL);
+
+    irq_info = (struct vfio_irq_info *)cmd->payload;
+    ret = dev_get_irqinfo(lm_ctx, irq_info);
+    if (ret < 0) {
+        lm_log(lm_ctx, LM_ERR, "do get irq info failed: %m\n");
+        cmd->hdr.msg_size = sizeof(struct vfio_user_header);
+        cmd->hdr.flags.error = true;
+    }
+}
+
+static void
+handle_device_set_irqs(lm_ctx_t *lm_ctx, struct vfio_user_request *cmd)
+{
+    int ret;
+    struct vfio_irq_set *irq_set;
+
+    assert(lm_ctx != NULL);
+    assert(cmd != NULL);
+
+    irq_set = (struct vfio_irq_set *)cmd->payload;
+    ret = dev_set_irqs(lm_ctx, irq_set, cmd->fds);
+    if (ret < 0) {
+        lm_log(lm_ctx, LM_ERR, "do set irqs failed: %m\n");
+        cmd->hdr.flags.error = true;
+    }
+    cmd->hdr.msg_size = sizeof(struct vfio_user_header);
+}
+
 static int
 process_request(lm_ctx_t *lm_ctx)
 {
     struct vfio_user_request cmd = { 0 };
-    struct vfio_device_info *dev_info;
-    struct vfio_region_info *vfio_reg;
-    struct vfio_user_dma_region *region;
-    struct vfio_user_region_access *access;
-    struct vfio_irq_info *irq_info;
-    struct vfio_irq_set *irq_set;
-    uint32_t i, num_regions;
     int err;
 
     err = transports_ops[lm_ctx->trans].get_request(lm_ctx, &cmd);
@@ -1128,85 +1253,25 @@ process_request(lm_ctx_t *lm_ctx)
 
     switch(cmd.hdr.command) {
         case VFIO_USER_DEVICE_GET_INFO:
-            dev_info = (struct vfio_device_info *)cmd.payload;
-            dev_get_info(dev_info);
-            assert(cmd.hdr.msg_size == (sizeof(struct vfio_user_header) + sizeof(*dev_info)));
+            handle_device_get_info(&cmd);
             break;
         case VFIO_USER_DEVICE_GET_REGION_INFO:
-            vfio_reg = (struct vfio_region_info *)cmd.payload;
-            err = dev_get_reginfo(lm_ctx, vfio_reg);
-            if (err < 0) {
-                lm_log(lm_ctx, LM_ERR, "VFIO_USER_DEVICE_GET_REGION_INFO failed: %m\n");
-                cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-                cmd.hdr.flags.error = true;
-                cmd.hdr.error_no = EFAULT;
-            } else {
-                cmd.hdr.msg_size = sizeof(struct vfio_user_header) + err;
-            }
+            handle_device_get_region_info(lm_ctx, &cmd);
             break;
         case VFIO_USER_DMA_MAP:
         case VFIO_USER_DMA_UNMAP:
-            num_regions = (cmd.hdr.msg_size - sizeof(struct vfio_user_header)) / sizeof(struct vfio_user_dma_region);
-            assert(num_regions <= VFIO_USER_MAX_MEM_REGIONS);
-            region = (struct vfio_user_dma_region *)cmd.payload;
-            /* ACK */
-            cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-
-            for (i = 0; i < num_regions; i++) {
-                if (cmd.hdr.command == VFIO_USER_DMA_MAP) {
-                    struct muser_cmd muser_cmd = {
-                        .type = MUSER_DMA_MMAP,
-                        .mmap.request.fd = cmd.fds[i],
-                        .mmap.request.addr = region[i].addr,
-                        .mmap.request.len = region[i].size,
-                        .mmap.request.offset = region[i].offset,
-                    };
-                    err = muser_dma_map(lm_ctx, &muser_cmd);
-                } else {
-                    assert(lm_ctx->unmap_dma != NULL);
-                    err = dma_controller_remove_region(lm_ctx->dma,
-                            region[i].addr, region[i].size,
-                            lm_ctx->unmap_dma, lm_ctx->pvt);
-                }
-
-                if (err != 0) {
-                    lm_log(lm_ctx, LM_ERR, "DMA MAP/UNMAP failed: %m\n");
-                    cmd.hdr.flags.error = true;
-                    break;
-                }
-            }
+            handle_dma_map_or_unmap(lm_ctx, &cmd);
             break;
         case VFIO_USER_REGION_READ:
         case VFIO_USER_REGION_WRITE:
-            access = (struct vfio_user_region_access *)cmd.payload;
-            err = do_access(lm_ctx, access->region, (void *)access->data, access->count, access->offset, cmd.hdr.command == VFIO_USER_REGION_WRITE);
-            if (err <= 0) {
-                lm_log(lm_ctx, LM_ERR, "do access failed: %m\n");
-                cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-                cmd.hdr.flags.error = true;
-            } else if (cmd.hdr.command == VFIO_USER_REGION_WRITE) {
-                cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-            }
+            handle_region_rw(lm_ctx, &cmd);
             break;
         case VFIO_USER_DEVICE_GET_IRQ_INFO:
-            irq_info = (struct vfio_irq_info *)cmd.payload;
-            err = dev_get_irqinfo(lm_ctx, irq_info);
-            if (err < 0) {
-                lm_log(lm_ctx, LM_ERR, "do get irq info failed: %m\n");
-                cmd.hdr.msg_size = sizeof(struct vfio_user_header);
-                cmd.hdr.flags.error = true;
-            }
+            handle_device_get_irq_info(lm_ctx, &cmd);
             break;
         case VFIO_DEVICE_SET_IRQS:
-            irq_set = (struct vfio_irq_set *)cmd.payload;
-            err = dev_set_irqs(lm_ctx, irq_set, cmd.fds);
-            if (err < 0) {
-                lm_log(lm_ctx, LM_ERR, "do set irqs failed: %m\n");
-                cmd.hdr.flags.error = true;
-            }
-            cmd.hdr.msg_size = sizeof(struct vfio_user_header);
+            handle_device_set_irqs(lm_ctx, &cmd);
             break;
-
         default:
             assert(0);
     }
