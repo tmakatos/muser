@@ -84,6 +84,7 @@ static const char *vfio_user_message_str[VFIO_USER_MAX] = {
     [VFIO_USER_REGION_WRITE]            = "VFIO_USER_REGION_WRITE",
     [VFIO_USER_DMA_READ]                = "VFIO_USER_DMA_READ",
     [VFIO_USER_DMA_WRITE]               = "VFIO_USER_DMA_WRITE",
+    [VFIO_USER_VM_INTERRUPT]            = "VFIO_USER_VM_INTERRUPT",
     [VFIO_USER_DEVICE_RESET]            = "VFIO_USER_DEVICE_RESET",
 };
 
