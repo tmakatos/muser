@@ -36,6 +36,7 @@
 
 #include <inttypes.h>
 #include <linux/vfio.h>
+#include <linux/version.h>
 
 enum vfio_user_command {
     VFIO_USER_VERSION                   = 1,
@@ -51,6 +52,7 @@ enum vfio_user_command {
     VFIO_USER_DMA_WRITE                 = 11,
     VFIO_USER_VM_INTERRUPT              = 12,
     VFIO_USER_DEVICE_RESET              = 13,
+    VFIO_USER_DIRTY_PAGES               = 14,
     VFIO_USER_MAX,
 };
 
@@ -101,6 +103,42 @@ struct vfio_user_dma_region_access {
 struct vfio_user_irq_info {
     uint32_t    subindex;
 } __attribute__((packed));
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,8,0)
+
+/* copied from <linux/vfio.h> */
+
+#define VFIO_REGION_TYPE_MIGRATION              (3)
+#define VFIO_REGION_SUBTYPE_MIGRATION           (1)
+
+struct vfio_device_migration_info {
+	__u32 device_state;         /* VFIO device state */
+#define VFIO_DEVICE_STATE_STOP      (0)
+#define VFIO_DEVICE_STATE_RUNNING   (1 << 0)
+#define VFIO_DEVICE_STATE_SAVING    (1 << 1)
+#define VFIO_DEVICE_STATE_RESUMING  (1 << 2)
+#define VFIO_DEVICE_STATE_MASK      (VFIO_DEVICE_STATE_RUNNING | \
+				     VFIO_DEVICE_STATE_SAVING |  \
+				     VFIO_DEVICE_STATE_RESUMING)
+
+#define VFIO_DEVICE_STATE_VALID(state) \
+	(state & VFIO_DEVICE_STATE_RESUMING ? \
+	(state & VFIO_DEVICE_STATE_MASK) == VFIO_DEVICE_STATE_RESUMING : 1)
+
+#define VFIO_DEVICE_STATE_IS_ERROR(state) \
+	((state & VFIO_DEVICE_STATE_MASK) == (VFIO_DEVICE_STATE_SAVING | \
+					      VFIO_DEVICE_STATE_RESUMING))
+
+#define VFIO_DEVICE_STATE_SET_ERROR(state) \
+	((state & ~VFIO_DEVICE_STATE_MASK) | VFIO_DEVICE_SATE_SAVING | \
+					     VFIO_DEVICE_STATE_RESUMING)
+
+	__u32 reserved;
+	__u64 pending_bytes;
+	__u64 data_offset;
+	__u64 data_size;
+};
+#endif
 
 #endif
 

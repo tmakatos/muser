@@ -159,6 +159,7 @@ enum {
     LM_DEV_NUM_IRQS
 };
 
+/* FIXME these are PCI regions */
 enum {
     LM_DEV_BAR0_REG_IDX,
     LM_DEV_BAR1_REG_IDX,
@@ -169,7 +170,15 @@ enum {
     LM_DEV_ROM_REG_IDX,
     LM_DEV_CFG_REG_IDX,
     LM_DEV_VGA_REG_IDX,
-    LM_DEV_NUM_REGS = 9
+    /*
+     * FIXME this really belong here, but simplifies implementation for now. A
+     * migration region can exist for non-PCI devices (can its index be
+     * anything?). In any case, we should allow the user to define custom regions
+     * at will, by fixing the migration region in that position we don't allow
+     * this.
+     */
+    LM_DEV_MIGRATION_REG_IDX,
+    LM_DEV_NUM_REGS = 10, /* TODO rename to LM_DEV_NUM_PCI_REGS */
 };
 
 typedef struct {

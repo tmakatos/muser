@@ -930,23 +930,33 @@ dev_get_irqinfo(lm_ctx_t *lm_ctx, struct vfio_irq_info *irq_info)
  * points accordingly.
  */
 static int
-dev_get_sparse_mmap_cap(lm_ctx_t *lm_ctx, lm_reg_info_t *lm_reg,
+dev_get_sparse_mmap_cap(lm_ctx_t *lm_ctx, lm_reg_info_t *lm_reg, int reg_index,
                         struct vfio_region_info **vfio_reg, bool is_kernel)
 {
+    struct vfio_info_cap_header *header;
+    struct vfio_region_info_cap_type *type = NULL;
     struct vfio_region_info_cap_sparse_mmap *sparse = NULL;
     struct lm_sparse_mmap_areas *mmap_areas;
     int nr_mmap_areas, i;
-    size_t sparse_size;
+    size_t type_size = 0;
+    size_t sparse_size = 0;
+    size_t cap_size;
     ssize_t ret;
     void *cap_ptr;
 
-    if (lm_reg->mmap_areas == NULL) {
-        lm_log(lm_ctx, LM_DBG, "bad mmap_areas\n");
-        return -EINVAL;
+    if (reg_index == LM_DEV_MIGRATION_REG_IDX) {
+        type_size = sizeof(struct vfio_region_info_cap_type);
+    } 
+
+    if (lm_reg->mmap_areas != NULL) {
+        nr_mmap_areas = lm_reg->mmap_areas->nr_mmap_areas;
+        sparse_size = sizeof(*sparse) + (nr_mmap_areas * sizeof(*sparse->areas));
     }
 
-    nr_mmap_areas = lm_reg->mmap_areas->nr_mmap_areas;
-    sparse_size = sizeof(*sparse) + (nr_mmap_areas * sizeof(*sparse->areas));
+    cap_size = type_size + sparse_size;
+    if (cap_size == 0) {
+        return 0;
+    }
 
     /*
      * If vfio_reg does not have enough space to accommodate  sparse info then
@@ -954,54 +964,79 @@ dev_get_sparse_mmap_cap(lm_ctx_t *lm_ctx, lm_reg_info_t *lm_reg,
      * is only for kernel/muser.ko, where the request comes from kernel/vfio.
      */
 
-    if ((*vfio_reg)->argsz < sparse_size + sizeof(**vfio_reg) && is_kernel) {
+    if ((*vfio_reg)->argsz < cap_size + sizeof(**vfio_reg) && is_kernel) {
         lm_log(lm_ctx, LM_DBG, "vfio_reg too small=%d\n", (*vfio_reg)->argsz);
-        (*vfio_reg)->argsz = sparse_size + sizeof(**vfio_reg);
+        (*vfio_reg)->argsz = cap_size + sizeof(**vfio_reg);
         (*vfio_reg)->cap_offset = 0;
         return 0;
     }
 
-    sparse = calloc(1, sparse_size);
-    if (sparse == NULL)
+    /* TODO deosn't need to be calloc, we overwrite it entirely */
+    header = calloc(1, cap_size);
+    if (header == NULL) {
         return -ENOMEM;
-    sparse->header.id = VFIO_REGION_INFO_CAP_SPARSE_MMAP;
-    sparse->header.version = 1;
-    sparse->header.next = 0;
-    sparse->nr_areas = nr_mmap_areas;
-
-    lm_log(lm_ctx, LM_DBG, "%s: capsize %llu, nr_mmap_areas %u", __func__,
-           sparse_size, nr_mmap_areas);
-    mmap_areas = lm_reg->mmap_areas;
-    for (i = 0; i < nr_mmap_areas; i++) {
-        sparse->areas[i].offset = mmap_areas->areas[i].start;
-        sparse->areas[i].size = mmap_areas->areas[i].size;
-        lm_log(lm_ctx, LM_DBG, "%s: area %d offset %#lx size %llu", __func__,
-               i, sparse->areas[i].offset, sparse->areas[i].size);
     }
 
+    if (reg_index == LM_DEV_MIGRATION_REG_IDX) {
+        type = (struct vfio_region_info_cap_type*)header;
+        type->header.id = VFIO_REGION_INFO_CAP_TYPE;
+        type->header.version = 1;
+        type->header.next = 0;  
+        type->type = VFIO_REGION_TYPE_MIGRATION; 
+        type->subtype = VFIO_REGION_SUBTYPE_MIGRATION;
+        (*vfio_reg)->cap_offset = sizeof(struct vfio_region_info);
+    }
+
+    if (lm_reg->mmap_areas != NULL) {
+        if (type != NULL) {
+            type->header.next = (*vfio_reg)->cap_offset + sizeof(struct vfio_region_info_cap_type);
+            sparse = (struct vfio_region_info_cap_sparse_mmap*)(type + 1);
+        } else {
+            (*vfio_reg)->cap_offset = sizeof(struct vfio_region_info);
+            sparse = (struct vfio_region_info_cap_sparse_mmap*)header;
+        }
+        sparse->header.id = VFIO_REGION_INFO_CAP_SPARSE_MMAP;
+        sparse->header.version = 1;
+        sparse->header.next = 0;
+        sparse->nr_areas = nr_mmap_areas;
+
+        lm_log(lm_ctx, LM_DBG, "%s: capsize %llu, nr_mmap_areas %u", __func__,
+               sparse_size, nr_mmap_areas);
+        mmap_areas = lm_reg->mmap_areas;
+        for (i = 0; i < nr_mmap_areas; i++) {
+            sparse->areas[i].offset = mmap_areas->areas[i].start;
+            sparse->areas[i].size = mmap_areas->areas[i].size;
+            lm_log(lm_ctx, LM_DBG, "%s: area %d offset %#lx size %llu", __func__,
+                   i, sparse->areas[i].offset, sparse->areas[i].size);
+        }
+    }
+
+    /*
+     * FIXME VFIO_REGION_INFO_FLAG_MMAP is valid if the region is
+     * memory-mappable in general, not only if it supports sparse mmap.
+     */
     (*vfio_reg)->flags |= VFIO_REGION_INFO_FLAG_MMAP | VFIO_REGION_INFO_FLAG_CAPS;
-    (*vfio_reg)->cap_offset = sizeof(**vfio_reg);
 
     if (is_kernel) {
         /* write the sparse mmap cap info to vfio-client user pages */
-        ret = write(lm_ctx->conn_fd, sparse, sparse_size);
-        if (ret != (ssize_t)sparse_size) {
-            free(sparse);
+        ret = write(lm_ctx->conn_fd, header, cap_size);
+        if (ret != (ssize_t)cap_size) {
+            free(header);
             return -EIO;
         }
     } else {
-        (*vfio_reg)->argsz = sparse_size + sizeof(**vfio_reg);
+        (*vfio_reg)->argsz = cap_size + sizeof(**vfio_reg);
         *vfio_reg = realloc(*vfio_reg, (*vfio_reg)->argsz);
         if (*vfio_reg == NULL) {
-            free(sparse);
+            free(header);
             return -ENOMEM;
         }
 
         cap_ptr = (char *)*vfio_reg + (*vfio_reg)->cap_offset;
-        memcpy(cap_ptr, sparse, sparse_size);
+        memcpy(cap_ptr, header, cap_size);
     }
 
-    free(sparse);
+    free(header);
     return 0;
 }
 
@@ -1071,11 +1106,10 @@ dev_get_reginfo(lm_ctx_t *lm_ctx, struct vfio_region_info **vfio_reg,
     (*vfio_reg)->flags = lm_reg->flags;
     (*vfio_reg)->size = lm_reg->size;
 
-    if (lm_reg->mmap_areas != NULL) {
-        err = dev_get_sparse_mmap_cap(lm_ctx, lm_reg, vfio_reg, is_kernel);
-        if (err) {
-            return err;
-        }
+    err = dev_get_sparse_mmap_cap(lm_ctx, lm_reg, (*vfio_reg)->index, vfio_reg,
+                                  is_kernel);
+    if (err) {
+        return err;
     }
 
     lm_log(lm_ctx, LM_DBG, "region_info[%d] offset %#lx flags %#x size %llu "
@@ -1087,8 +1121,9 @@ dev_get_reginfo(lm_ctx_t *lm_ctx, struct vfio_region_info **vfio_reg,
 }
 
 static long
-dev_get_info(struct vfio_device_info *dev_info)
+dev_get_info(lm_ctx_t *lm_ctx, struct vfio_device_info *dev_info)
 {
+    assert(lm_ctx != NULL);
     assert(dev_info != NULL);
 
     // Ensure provided argsz is sufficiently big.
@@ -1112,7 +1147,7 @@ do_muser_ioctl(lm_ctx_t *lm_ctx, struct muser_cmd_ioctl *cmd_ioctl, void *data)
     assert(lm_ctx != NULL);
     switch (cmd_ioctl->vfio_cmd) {
     case VFIO_DEVICE_GET_INFO:
-        err = dev_get_info(&cmd_ioctl->data.dev_info);
+        err = dev_get_info(lm_ctx, &cmd_ioctl->data.dev_info);
         break;
     case VFIO_DEVICE_GET_REGION_INFO:
         reg_info = &cmd_ioctl->data.reg_info;
@@ -1735,7 +1770,7 @@ static int handle_device_get_info(lm_ctx_t *lm_ctx,
         return -errno;
     }
 
-    ret = dev_get_info(dev_info);
+    ret = dev_get_info(lm_ctx, dev_info);
     if (ret < 0) {
         return ret;
     }
@@ -2289,6 +2324,7 @@ pci_config_setup(lm_ctx_t *lm_ctx, const lm_dev_info_t *dev_info)
 {
     lm_reg_info_t *cfg_reg;
     const lm_reg_info_t zero_reg = { 0 };
+    lm_reg_info_t *migr_reg;
     int i;
 
     assert(lm_ctx != NULL);
@@ -2343,6 +2379,16 @@ pci_config_setup(lm_ctx_t *lm_ctx, const lm_dev_info_t *dev_info)
 
         lm_ctx->pci_config_space->hdr.sts.cl = 0x1;
         lm_ctx->pci_config_space->hdr.cap = PCI_STD_HEADER_SIZEOF;
+    }
+
+    /*
+     * Check the migration region.
+     */
+    migr_reg = &lm_ctx->pci_info.reg_info[LM_DEV_MIGRATION_REG_IDX];
+    if (migr_reg->size > 0) {
+        if (migr_reg->size < sizeof(struct vfio_device_migration_info)) {
+            return -EINVAL;
+        }
     }
 
     return 0;

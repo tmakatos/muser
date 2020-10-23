@@ -118,6 +118,8 @@ static int
 get_device_region_info(int sock, struct vfio_device_info *client_dev_info)
 {
     struct vfio_region_info region_info;
+    struct vfio_info_cap_header *header;
+    struct vfio_region_info_cap_type *type;
     struct vfio_region_info_cap_sparse_mmap *sparse;
     struct vfio_user_header hdr;
     uint16_t msg_id = 0;
@@ -148,26 +150,46 @@ get_device_region_info(int sock, struct vfio_device_info *client_dev_info)
 	    if (cap_sz) {
             int j;
 
-            sparse = calloc(cap_sz, 1);
-            if (sparse == NULL) {
+            header = calloc(cap_sz, 1);
+            if (header == NULL) {
                 return -ENOMEM;
             }
 
-            ret = recv(sock, sparse, cap_sz, 0);
+            ret = recv(sock, header, cap_sz, 0);
             if (ret < 0) {
                 ret = -errno;
-		        fprintf(stderr, "%s: failed to receive sparse cap info: %s\n",
+		        fprintf(stderr, "%s: failed to receive cap info: %s\n",
                         __func__, strerror(-ret));
-                free(sparse);
+                free(header);
                 return ret;
             }
-            fprintf(stdout, "%s: Sparse cap nr_mmap_areas %d\n", __func__,
-                    sparse->nr_areas);
-            for (j = 0; j < sparse->nr_areas; j++) {
-                fprintf(stdout, "%s: area %d offset %#lx size %llu\n", __func__,
-                        j, sparse->areas[j].offset, sparse->areas[j].size);
+            assert(ret == cap_sz);
+
+            switch (header->id) {
+                case VFIO_REGION_INFO_CAP_SPARSE_MMAP:
+                    sparse = (struct vfio_region_info_cap_sparse_mmap*)header;
+                    fprintf(stdout, "%s: Sparse cap nr_mmap_areas %d\n", __func__,
+                            sparse->nr_areas);
+                    for (j = 0; j < sparse->nr_areas; j++) {
+                        fprintf(stdout, "%s: area %d offset %#lx size %llu\n", __func__,
+                                j, sparse->areas[j].offset, sparse->areas[j].size);
+                    }
+                    break;
+                case VFIO_REGION_INFO_CAP_TYPE:
+                    type = (struct vfio_region_info_cap_type*)header;
+                    if (type->type != VFIO_REGION_TYPE_MIGRATION ||
+                        type->subtype != VFIO_REGION_SUBTYPE_MIGRATION) {
+                        fprintf(stderr, "bad region type %d/%d\n", type->type,
+                                type->subtype);
+                        exit(EXIT_FAILURE);
+                    } 
+                    printf("migration region\n");
+                    break;
+                default:
+                    fprintf(stderr, "bad VFIO cap ID %#x\n", header->id);
+                    exit(EXIT_FAILURE);
             }
-            free(sparse);
+            free(header);
 	    }
     }
 }

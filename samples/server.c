@@ -253,6 +253,10 @@ int main(int argc, char *argv[])
                 .mmap_areas = sparse_areas,
 		        .map = map_area
             },
+            .reg_info[LM_DEV_MIGRATION_REG_IDX] = { /* migration region */
+                .flags = LM_REG_FLAG_RW,
+                .size = sysconf(_SC_PAGESIZE),
+            },
             .irq_count[LM_DEV_INTX_IRQ_IDX] = 1,
         },
         .uuid = argv[optind],
