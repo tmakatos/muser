@@ -44,6 +44,14 @@
 #include "caps/msi.h"
 #include "caps/msix.h"
 
+#ifndef VFIO_REGION_TYPE_MIGRATION
+#define VFIO_REGION_TYPE_MIGRATION (3)
+#endif
+
+#ifndef VFIO_REGION_SUBTYPE_MIGRATION
+#define VFIO_REGION_SUBTYPE_MIGRATION (1)
+#endif
+
 #define LIB_MUSER_VFIO_USER_VERS_MJ 0
 #define LIB_MUSER_VFIO_USER_VERS_MN 1
 
@@ -125,29 +133,43 @@ typedef unsigned long (lm_map_region_t) (void *pvt, unsigned long off,
  */
 void *lm_mmap(lm_ctx_t * lm_ctx, off_t offset, size_t length);
 
+/* FIXME this struct must not be public, see https://github.com/nutanix/muser/issues/64 */
 typedef struct  {
 
     /*
      * Region flags, see LM_REG_FLAG_XXX above.
      */
-    uint32_t            flags;
+    uint32_t                    flags;
 
     /*
      * Size of the region.
      */
-    uint32_t            size;
+    uint32_t                    size;
 
     /*
      * Callback function that is called when the region is read or written.
      */
-    lm_region_access_t  *fn;
+    lm_region_access_t          *fn;
 
     /*
      * Callback function that is called when the region is memory mapped.
      * Required if LM_REG_FLAG_MEM is set, otherwise ignored.
      */
-    lm_map_region_t     *map;
+    lm_map_region_t             *map;
     struct lm_sparse_mmap_areas *mmap_areas; /* sparse mmap areas */
+
+#if 0
+    /*
+     * VFIO region info capabilities.
+     */
+    struct vfio_info_cap_header **cap_headers;
+    size_t                      nr_cap_headers;
+    size_t                      cap_size;
+
+    struct vfio_region_info_cap_sparse_mmap *sparse_mmap;
+    struct vfio_region_info_cap_type *type;
+#endif
+
 } lm_reg_info_t;
 
 enum {
@@ -245,6 +267,12 @@ typedef ssize_t (lm_cap_access_t) (void *pvt, uint8_t id,
                                    loff_t offset, bool is_write);
 
 /* FIXME does it have to be packed as well? */
+/*
+ * FIXME if we add a member to this struct without recompiling the application
+ * e.g. upgrading the library, things might break. Better change it to be more
+ * like vfio_user_region_cap_t
+ */
+/* PCI capability */
 typedef union {
     struct msicap msi;
     struct msixcap msix;
@@ -325,8 +353,6 @@ typedef struct {
      */
     int             nr_caps;
     lm_cap_t        **caps;
-
-
 } lm_dev_info_t;
 
 /**
@@ -547,6 +573,12 @@ lm_log(lm_ctx_t *lm_ctx, lm_log_lvl_t lvl, const char *fmt, ...);
 /* FIXME */
 int muser_send_fds(int sock, int *fds, size_t count);
 ssize_t muser_recv_fds(int sock, int *fds, size_t count);
+
+#if 0
+int lm_add_vfio_region_info_caps(lm_ctx_t *lm_ctx, int region,
+                                 struct vfio_info_cap_header **headers,
+                                 size_t nr_headers);
+#endif
 
 #endif /* LIB_MUSER_H */
 

@@ -2,7 +2,8 @@
  * Sample server to be tested with samples/client.c
  *
  * Copyright (c) 2020, Nutanix Inc. All rights reserved.
- *     Author: Thanos Makatos <thanos@nutanix.com>
+ *     Authors: Thanos Makatos <thanos@nutanix.com>
+ *              Swapnil Ingle <swapnil.ingle@nutanix.com>
  *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
@@ -190,6 +191,15 @@ static int device_reset(void *pvt)
 {
     printf("device reset callback\n");
 }
+
+#if 0
+ssize_t
+migration_access(void *pvt, char * const buf, size_t count, loff_t offset,
+                 const bool is_write)
+{
+    assert(false);
+}
+#endif
 
 int main(int argc, char *argv[])
 {

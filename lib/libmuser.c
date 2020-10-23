@@ -2686,4 +2686,114 @@ lm_dma_write(lm_ctx_t *lm_ctx, dma_addr_t addr, size_t count, void *data)
     return ret;
 }
 
+#if 0
+/*
+ * FIXME migration definitions are only available in very recent kernels (e.g. v5.9). We
+ * only need the kernel headers. To install the kernel headers, simply run
+ * make headers_install INSTALL_HDR_PATH=/usr/src/linux-headers-v5.9
+ * and then point libmuser to /usr/src/linux-headers-v5.9
+ */ 
+
+/* FIXME all VFIO region info caps begin with struct vfio_info_cap_header,
+ * so we can cast back and forth. We don't need  the size of the cap beause
+ * we can find it out since we know the type of the cap, stored in
+ * vfio_info_cap_header.id.
+ */
+int
+lm_add_vfio_region_info_caps(lm_ctx_t *lm_ctx, int region,
+                             struct vfio_info_cap_header **headers,
+                             size_t nr_headers)
+{
+    lm_reg_info_t *lm_reg_info;
+    size_t i, size;
+    int err = 0;
+
+    if (region < 0 || region >= LM_DEV_NUM_REGS) {
+        return -EINVAL;
+    }
+
+    assert(lm_ctx != NULL);
+
+    if (nr_headers == 0) {
+        return 0;
+    }
+
+    lm_reg_info = &lm_ctx->pci_info.reg_info[region];
+    if (lm_reg_info->size == 0) {
+        return -EINVAL;
+    }
+
+    assert(headers != NULL);
+
+    /* 
+     * FIXME we could allocate a big chunk of memory and store all caps, that
+     * simplify returning this information when handling
+     * VFIO_DEVICE_GET_REGION_INFO We could also store struct vfio_region_info
+     * in that chunk of memory.
+     */
+
+    lm_reg_info->nr_cap_headers = nr_headers;
+    lm_reg_info->cap_headers = calloc(nr_headers, sizeof headers);
+
+    for (i = 0; i < nr_headers; i++) {
+        struct vfio_info_cap_header **header = NULL;
+        struct vfio_region_info_cap_sparse_mmap *sparse_mmap;
+        struct vfio_region_info_cap_type *type;
+        switch (headers[i]->id) {
+            case VFIO_REGION_INFO_CAP_SPARSE_MMAP:
+                if (lm_reg_info->sparse_mmap != NULL) {
+                    /*
+                     * XXX check whether it's allowed to provide the same
+                     * capability multiple times. For sparse_mmap specifically
+                     * it could work, but it's still akward.
+                     */
+                    err = -EINVAL;
+                    goto out;
+                }
+                sparse_mmap = (struct vfio_region_info_cap_sparse_mmap*)headers[i];
+                size = sizeof(*sparse_mmap) + sparse_mmap->nr_areas * sizeof(struct vfio_region_sparse_mmap_area);
+                header = (struct vfio_info_cap_header**)&lm_reg_info->sparse_mmap;
+                break;
+            case VFIO_REGION_INFO_CAP_TYPE:
+                if (lm_reg_info->type != NULL) {
+                    err=  -EINVAL;
+                    goto out;
+                }
+                type = (struct vfio_region_info_cap_type*)headers[i];
+                if (type->type != VFIO_REGION_TYPE_MIGRATION
+                    || type->subtype != VFIO_REGION_SUBTYPE_MIGRATION) {
+                    err = -ENOTSUP;
+                    goto out;
+                }
+                size = sizeof(*type);
+                header = (struct vfio_info_cap_header**)&lm_reg_info->type;
+                break;
+            default:
+                err = -EINVAL;
+                goto out;
+        }
+        lm_reg_info->cap_headers[i] = malloc(size);
+        if (lm_reg_info->cap_headers[i] == NULL) {
+            err = -errno;
+            goto out;
+        }
+        memcpy(lm_reg_info->cap_headers[i], headers[i], size);
+        *header = headers[i];
+    }
+
+out:
+    if (err != 0) {
+        if (lm_reg_info->cap_headers != NULL) {
+            for (i = 0; i < nr_headers; i++) {
+                free(lm_reg_info->cap_headers[i]);
+            }
+            free(lm_reg_info->cap_headers);
+            lm_reg_info->cap_headers = NULL;
+        }
+        lm_reg_info->nr_cap_headers = 0;
+    }
+    return err;
+}
+#endif
+
 /* ex: set tabstop=4 shiftwidth=4 softtabstop=4 expandtab: */
