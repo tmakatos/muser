@@ -152,20 +152,21 @@ typedef struct  {
     lm_region_access_t          *fn;
 
     /*
-     * Callback function that is called when the region is memory mapped.
+     * Callback function that is called when the region gets memory mapped.
      * Required if LM_REG_FLAG_MEM is set, otherwise ignored.
      */
     lm_map_region_t             *map;
     struct lm_sparse_mmap_areas *mmap_areas; /* sparse mmap areas */
 
-#if 0
     /*
      * VFIO region info capabilities.
      */
     struct vfio_info_cap_header **cap_headers;
     size_t                      nr_cap_headers;
-    size_t                      cap_size;
 
+#if 0
+    /* FIXME private */
+    size_t                      cap_size;
     struct vfio_region_info_cap_sparse_mmap *sparse_mmap;
     struct vfio_region_info_cap_type *type;
 #endif

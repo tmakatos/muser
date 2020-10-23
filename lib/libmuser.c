@@ -2706,16 +2706,13 @@ lm_add_vfio_region_info_caps(lm_ctx_t *lm_ctx, int region,
 {
     lm_reg_info_t *lm_reg_info;
     size_t i, size;
-    int err = 0;
+    int ret = 0;
+
+    assert(lm_ctx != NULL);
+    assert(headers != NULL);
 
     if (region < 0 || region >= LM_DEV_NUM_REGS) {
         return -EINVAL;
-    }
-
-    assert(lm_ctx != NULL);
-
-    if (nr_headers == 0) {
-        return 0;
     }
 
     lm_reg_info = &lm_ctx->pci_info.reg_info[region];
@@ -2723,20 +2720,22 @@ lm_add_vfio_region_info_caps(lm_ctx_t *lm_ctx, int region,
         return -EINVAL;
     }
 
-    assert(headers != NULL);
+    if (nr_headers == 0) {
+        return 0;
+    }
 
     /* 
      * FIXME we could allocate a big chunk of memory and store all caps, that
      * simplify returning this information when handling
-     * VFIO_DEVICE_GET_REGION_INFO We could also store struct vfio_region_info
-     * in that chunk of memory.
+     * VFIO_DEVICE_GET_REGION_INFO. We could also store struct vfio_region_info
+     * in that chunk of memory. We can set the correct values for the
+     * capability chain here.
      */
 
     lm_reg_info->nr_cap_headers = nr_headers;
     lm_reg_info->cap_headers = calloc(nr_headers, sizeof headers);
 
     for (i = 0; i < nr_headers; i++) {
-        struct vfio_info_cap_header **header = NULL;
         struct vfio_region_info_cap_sparse_mmap *sparse_mmap;
         struct vfio_region_info_cap_type *type;
         switch (headers[i]->id) {
@@ -2745,44 +2744,44 @@ lm_add_vfio_region_info_caps(lm_ctx_t *lm_ctx, int region,
                     /*
                      * XXX check whether it's allowed to provide the same
                      * capability multiple times. For sparse_mmap specifically
-                     * it could work, but it's still akward.
+                     * it could work, but still it's awkward.
                      */
-                    err = -EINVAL;
+                    ret = -EINVAL;
                     goto out;
                 }
                 sparse_mmap = (struct vfio_region_info_cap_sparse_mmap*)headers[i];
                 size = sizeof(*sparse_mmap) + sparse_mmap->nr_areas * sizeof(struct vfio_region_sparse_mmap_area);
-                header = (struct vfio_info_cap_header**)&lm_reg_info->sparse_mmap;
                 break;
             case VFIO_REGION_INFO_CAP_TYPE:
                 if (lm_reg_info->type != NULL) {
-                    err=  -EINVAL;
+                    ret=  -EINVAL;
                     goto out;
                 }
                 type = (struct vfio_region_info_cap_type*)headers[i];
                 if (type->type != VFIO_REGION_TYPE_MIGRATION
                     || type->subtype != VFIO_REGION_SUBTYPE_MIGRATION) {
-                    err = -ENOTSUP;
+                    ret = -ENOTSUP;
                     goto out;
                 }
                 size = sizeof(*type);
-                header = (struct vfio_info_cap_header**)&lm_reg_info->type;
                 break;
             default:
-                err = -EINVAL;
+                ret = -EINVAL;
                 goto out;
         }
         lm_reg_info->cap_headers[i] = malloc(size);
         if (lm_reg_info->cap_headers[i] == NULL) {
-            err = -errno;
+            ret = -errno;
             goto out;
         }
+        /* FIXME must first copy and then validate */
         memcpy(lm_reg_info->cap_headers[i], headers[i], size);
-        *header = headers[i];
+
+        lm_reg_info->cap_size += size;
     }
 
 out:
-    if (err != 0) {
+    if (ret != 0) {
         if (lm_reg_info->cap_headers != NULL) {
             for (i = 0; i < nr_headers; i++) {
                 free(lm_reg_info->cap_headers[i]);
@@ -2792,7 +2791,7 @@ out:
         }
         lm_reg_info->nr_cap_headers = 0;
     }
-    return err;
+    return ret;
 }
 #endif
 
