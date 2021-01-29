@@ -433,12 +433,12 @@ typedef struct {
  * @size: size of the migration region
  * @callbacks: migration callbacks
  * @mmap_areas: array of memory mappable areas; if a file descriptor is
- *  provided, but this is NULL, then the entire region is mappable.
+ *  provided, but this is NULL, then the entire migration region is mappable.
  * @nr_mmap_areas: number of sparse areas in @mmap_areas; must be provided if
  *  the @mmap_areas is non-NULL, or 0 otherwise.
- * @fd: file descriptor of the file backing the migration region if the region
- *  is mappable; it is the server's responsibility to create a file suitable
- *  for memory mapping by the client.
+ * @addr: output argument that receives the address of the memory mapped
+ *  migration region if it is either partially or wholly mappable. If the
+ *  migration region is not mappable then this argument is not used.
  *
  * @returns 0 on success, -1 on error, Sets errno.
  */
@@ -446,7 +446,7 @@ int
 vfu_setup_device_migration(vfu_ctx_t *vfu_ctx, size_t size,
                            const vfu_migration_callbacks_t * callbacks,
                            struct iovec *mmap_areas, uint32_t nr_mmap_areas,
-                           int fd);
+                           void * * addr);
 
 /**
  * Triggers an interrupt.

@@ -420,6 +420,7 @@ int main(int argc, char *argv[])
         .data_written = &migration_data_written,
         .write_data = &migration_write_data
     };
+    void * migr_reg;
 
     while ((opt = getopt(argc, argv, "v")) != -1) {
         switch (opt) {
@@ -523,7 +524,7 @@ int main(int argc, char *argv[])
     }
 
     ret = vfu_setup_device_migration(vfu_ctx, migr_size, &migr_callbacks,
-                                     mmap_areas, 2, fileno(migr_fp));
+                                     mmap_areas, 2, &migr_reg);
     if (ret < 0) {
         err(EXIT_FAILURE, "failed to setup device migration");
     }

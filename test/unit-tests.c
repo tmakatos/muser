@@ -1168,6 +1168,53 @@ test_migration_state_transitions(void **state __attribute__ ((unused)))
     }
 }
 
+static void
+test_vfu_setup_device_migration(void **state __attribute__ ((unused)))
+{
+    vfu_reg_info_t region = { 0 };
+    vfu_ctx_t vfu_ctx = { .nr_regions = 1, .reg_info = &region };
+    int ret;
+    const size_t region_size = 0x1234;
+    const vfu_migration_callbacks_t callbacks = {
+        .transition = (void*)0xdeadbeef,
+        .get_pending_bytes = (void*)0xcafebabe,
+        .prepare_data = (void*)0x8badf00d,
+        .read_data = (void*)0xfaceb00c,
+        .write_data = (void*)0xdeadc0de
+    };
+    void * addr;
+    /* FIXME to check callbacks we need to call handle_pending_bytes etc. */
+
+//#error need to make sure that addr contains valid memory, we probably have to mock the body of "if (mmap_areas != 0) { ..." in vfu_setup_device_migration
+
+    /* migration area not mappable */
+    ret = vfu_setup_device_migration(&vfu_ctx, region_size, &callbacks, NULL,
+                                     0, &addr);
+    assert_int_equal(0, ret);
+    assert_int_equal(VFU_REGION_FLAG_READ | VFU_REGION_FLAG_WRITE, region.flags);
+    assert_int_equal(region_size + sizeof(struct vfio_device_migration_info),
+                     region.size);
+    assert_null(region.mmap_areas);
+    assert_int_equal(0, region.nr_mmap_areas);
+    assert_int_equal(-1, region.fd);
+    
+    /* migration area fully mappable */
+    vfu_ctx.migr_reg = NULL;
+    memset(&region, 0, sizeof region);
+    ret = vfu_setup_device_migration(&vfu_ctx, region_size, &callbacks, NULL,
+                                     0, &addr);
+    assert_int_equal(0, ret);
+    assert_int_equal(VFU_REGION_FLAG_READ | VFU_REGION_FLAG_WRITE, region.flags);
+    assert_int_equal(region_size + sizeof(struct vfio_device_migration_info),
+                     region.size);
+    assert_non_null(region.mmap_areas);
+    assert_int_equal(1, region.nr_mmap_areas);
+    assert_int_equal(0xdeadbeef, region.fd);
+
+    /* migration area sparsely mappable */
+    /* FIXME */
+}
+
 /*
  * FIXME we shouldn't have to specify a setup function explicitly for each unit
  * test, cmocka should provide that. E.g. cmocka_run_group_tests enables us to
@@ -1205,7 +1252,8 @@ int main(void)
         cmocka_unit_test_setup(test_dma_map_sg, setup),
         cmocka_unit_test_setup(test_dma_addr_to_sg, setup),
         cmocka_unit_test_setup(test_vfu_setup_device_dma_cb, setup),
-        cmocka_unit_test_setup(test_migration_state_transitions, setup)
+        cmocka_unit_test_setup(test_migration_state_transitions, setup),
+        cmocka_unit_test_setup(test_vfu_setup_device_migration, setup)
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

@@ -48,6 +48,7 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 
 #include "dma.h"
 #include "irq.h"
@@ -1343,11 +1344,81 @@ vfu_setup_device_nr_irqs(vfu_ctx_t *vfu_ctx, enum vfu_dev_irq_type type,
     return 0;
 }
 
+static size_t nr_pages(size_t size)
+{
+    return size / sysconf(_SC_PAGESIZE) + (size % sysconf(_SC_PAGESIZE) > 0);
+}
+
+static int
+setup_device_migration_file(vfu_ctx_t *vfu_ctx, vfu_reg_info_t *migr_reg,
+                            struct iovec *mmap_areas, size_t size, void **addr)
+{
+    char name[249]; /* 249 comes from memfd_create(2) man page */
+    const size_t headroom = nr_pages(sizeof(struct vfio_device_migration_info)) * sysconf(_SC_PAGESIZE);
+    int ret;
+
+    assert(vfu_ctx != NULL);
+    assert(migr_reg != NULL);
+    assert(mmap_areas != NULL);
+    assert(addr != NULL);
+
+    migr_reg->size = headroom + size;
+
+    if (migr_reg->nr_mmap_areas == 0) {
+        struct iovec _mmap_areas = {
+            .iov_base = (void*)headroom,
+            .iov_len = migr_reg->size
+        };
+        ret = copyin_mmap_areas(migr_reg, &_mmap_areas, 1);
+        if (ret < 0) {
+            return ret;
+        }
+    } else {
+        int i;
+        struct iovec *iov = &migr_reg->mmap_areas[migr_reg->nr_mmap_areas - 1];
+        if ((uint8_t)iov->iov_base + iov->iov_len > size) {
+            vfu_log(vfu_ctx, LOG_ERR, "bad sparse mmaps");
+            return -EINVAL;
+        }
+        for (i = 0; i < migr_reg->nr_mmap_areas; i++) {
+            uint8_t *p = (uint8_t*)&migr_reg->mmap_areas[i].iov_base;
+            *p += headroom;
+        }
+    }
+    ret = snprintf(name, ARRAY_SIZE(name), "%s_migration", vfu_ctx->uuid);
+    if (ret < 0) {
+        if (errno == 0) { /* snprintf doesn't necessarily set errno */
+            errno = EINVAL;
+        }
+        return -errno;
+    }
+    /* TODO allow user to specify MFD_HUGETLB etc. */
+    migr_reg->fd = syscall(SYS_memfd_create, name, 0); 
+    if (migr_reg->fd == -1) {
+        return -errno;
+    }
+    /* FIXME adjust migr_reg size to be aligned otherwise mmap will fail */
+    ret = ftruncate(migr_reg->fd, migr_reg->size);
+    if (ret == -1) {
+        vfu_log(vfu_ctx, LOG_ERR,
+                "failed to truncate migration region %s to %d: %m");
+        return -errno;
+    }
+    *addr = mmap(NULL, migr_reg->size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                 migr_reg->fd, 0);
+    if (*addr == MAP_FAILED) {
+        vfu_log(vfu_ctx, LOG_ERR,
+                "failed to mmap migration region: %m");
+        return -errno;
+    }
+    return 0;
+}
+
 int
 vfu_setup_device_migration(vfu_ctx_t *vfu_ctx, size_t size,
                            const vfu_migration_callbacks_t * callbacks,
                            struct iovec *mmap_areas, uint32_t nr_mmap_areas,
-                           int fd)
+                           void **addr)
 {
     vfu_reg_info_t *migr_reg;
     int ret = 0;
@@ -1371,17 +1442,40 @@ vfu_setup_device_migration(vfu_ctx_t *vfu_ctx, size_t size,
     }
 
     migr_reg->flags = VFU_REGION_FLAG_RW;
-    migr_reg->size = sizeof(struct vfio_device_migration_info) + size;
-    migr_reg->fd = fd;
+
+    if (mmap_areas != NULL) {
+        assert(addr != NULL);
+        ret = setup_device_migration_file(vfu_ctx, migr_reg, mmap_areas, size,
+                                          addr);
+    } else {
+        migr_reg->size = sizeof(struct vfio_device_migration_info) + size;
+        migr_reg->fd = -1;
+    }
 
     vfu_ctx->migration = init_migration(callbacks, migr_reg->size, &ret);
     if (vfu_ctx->migration == NULL) {
         vfu_log(vfu_ctx, LOG_ERR, "failed to initialize device migration");
-        free(migr_reg->mmap_areas);
-        return ERROR(ret);
+        goto out;
     }
     vfu_ctx->migr_reg = migr_reg;
 
+out:
+    if (ret != 0 ) {
+        if (migr_reg != NULL) {
+            if (*addr != NULL && munmap(*addr, migr_reg->size) == -1) {
+                vfu_log(vfu_ctx, LOG_WARNING,
+                        "failed to unmap %#lx-%#lx: %m (error ignored)",
+                        (uint8_t*)*addr, (uint8_t*)*addr + migr_reg->size - 1);
+            }
+            if (migr_reg->fd != -1 && close(migr_reg->fd) == -1) {
+                vfu_log(vfu_ctx, LOG_WARNING,
+                        "failed to close %d: %m (error ignored)", migr_reg->fd);
+            }
+            free(migr_reg->mmap_areas);
+            /* FIXME must re-initialize migr_reg */
+        }
+        return ERROR(ret);
+    }
     return 0;
 }
 
