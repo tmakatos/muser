@@ -412,6 +412,14 @@ int main(int argc, char *argv[])
     };
     vfu_ctx_t *vfu_ctx;
     FILE *bar1_fp, *migr_fp;
+    const vfu_migration_callbacks_t migr_callbacks = {
+        .transition = &migration_device_state_transition,
+        .get_pending_bytes = &migration_get_pending_bytes,
+        .prepare_data = &migration_prepare_data,
+        .read_data = &migration_read_data,
+        .data_written = &migration_data_written,
+        .write_data = &migration_write_data
+    };
 
     while ((opt = getopt(argc, argv, "v")) != -1) {
         switch (opt) {
@@ -513,22 +521,8 @@ int main(int argc, char *argv[])
         err(EXIT_FAILURE, "failed to mmap migration file");
     }
 
-    vfu_migration_t migration = {
-        .size = migr_size,
-        .mmap_areas = mmap_areas,
-        .nr_mmap_areas = 2,
-        .callbacks = {
-            .transition = &migration_device_state_transition,
-            .get_pending_bytes = &migration_get_pending_bytes,
-            .prepare_data = &migration_prepare_data,
-            .read_data = &migration_read_data,
-            .data_written = &migration_data_written,
-            .write_data = &migration_write_data
-        },
-        .fd = fileno(migr_fp)
-    };
-
-    ret = vfu_setup_device_migration(vfu_ctx, &migration);
+    ret = vfu_setup_device_migration(vfu_ctx, migr_size, &migr_callbacks,
+                                     mmap_areas, 2, fileno(migr_fp));
     if (ret < 0) {
         err(EXIT_FAILURE, "failed to setup device migration");
     }

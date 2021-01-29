@@ -422,22 +422,31 @@ typedef struct {
 
 } vfu_migration_callbacks_t;
 
-typedef struct {
-    size_t                      size;
-    vfu_migration_callbacks_t   callbacks;
-    struct iovec                *mmap_areas;
-    uint32_t                    nr_mmap_areas;
-    int                         fd;
-} vfu_migration_t;
-
-//TODO: Re-visit once migration support is done.
 /**
  * Enable support for device migration.
+ *
+ * FIXME we shouldn't be using vfu_migration_callbacks_t for the same reason
+ * we've dropped all other public structs. Problem is that we'll pass 6 more
+ * arguments, one for each callback.
+ *
  * @vfu_ctx: the libvfio-user context
- * @migration: information required to migrate device
+ * @size: size of the migration region
+ * @callbacks: migration callbacks
+ * @mmap_areas: array of memory mappable areas; if a file descriptor is
+ *  provided, but this is NULL, then the entire region is mappable.
+ * @nr_mmap_areas: number of sparse areas in @mmap_areas; must be provided if
+ *  the @mmap_areas is non-NULL, or 0 otherwise.
+ * @fd: file descriptor of the file backing the migration region if the region
+ *  is mappable; it is the server's responsibility to create a file suitable
+ *  for memory mapping by the client.
+ *
+ * @returns 0 on success, -1 on error, Sets errno.
  */
 int
-vfu_setup_device_migration(vfu_ctx_t *vfu_ctx, vfu_migration_t *migration);
+vfu_setup_device_migration(vfu_ctx_t *vfu_ctx, size_t size,
+                           const vfu_migration_callbacks_t * callbacks,
+                           struct iovec *mmap_areas, uint32_t nr_mmap_areas,
+                           int fd);
 
 /**
  * Triggers an interrupt.

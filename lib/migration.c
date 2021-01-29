@@ -121,12 +121,13 @@ vfio_migr_state_transition_is_valid(__u32 from, __u32 to)
 }
 
 struct migration *
-init_migration(const vfu_migration_t * const vfu_migr, int *err)
+init_migration(const vfu_migration_callbacks_t * callbacks, size_t size,
+               int *err)
 {
     struct migration *migr;
 
     *err = 0;
-    if (vfu_migr->size < sizeof(struct vfio_device_migration_info)) {
+    if (size < sizeof(struct vfio_device_migration_info)) {
         *err = EINVAL;
         return NULL;
     }
@@ -147,7 +148,7 @@ init_migration(const vfu_migration_t * const vfu_migr, int *err)
     /* FIXME this should be done in vfu_ctx_run or poll */
     migr->info.device_state = VFIO_DEVICE_STATE_RUNNING;
 
-    migr->callbacks = vfu_migr->callbacks;
+    migr->callbacks = *callbacks;
     if (migr->callbacks.transition == NULL ||
         migr->callbacks.get_pending_bytes == NULL ||
         migr->callbacks.prepare_data == NULL ||

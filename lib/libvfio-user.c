@@ -1344,7 +1344,10 @@ vfu_setup_device_nr_irqs(vfu_ctx_t *vfu_ctx, enum vfu_dev_irq_type type,
 }
 
 int
-vfu_setup_device_migration(vfu_ctx_t *vfu_ctx, vfu_migration_t *migration)
+vfu_setup_device_migration(vfu_ctx_t *vfu_ctx, size_t size,
+                           const vfu_migration_callbacks_t * callbacks,
+                           struct iovec *mmap_areas, uint32_t nr_mmap_areas,
+                           int fd)
 {
     vfu_reg_info_t *migr_reg;
     int ret = 0;
@@ -1362,17 +1365,16 @@ vfu_setup_device_migration(vfu_ctx_t *vfu_ctx, vfu_migration_t *migration)
     migr_reg = &vfu_ctx->reg_info[(vfu_ctx->nr_regions - 1)];
 
     /* FIXME: Are there sparse areas need to be setup flags accordingly */
-    ret = copyin_mmap_areas(migr_reg, migration->mmap_areas,
-                            migration->nr_mmap_areas);
+    ret = copyin_mmap_areas(migr_reg, mmap_areas, nr_mmap_areas);
     if (ret < 0) {
         return ERROR(-ret);
     }
 
     migr_reg->flags = VFU_REGION_FLAG_RW;
-    migr_reg->size = sizeof(struct vfio_device_migration_info) + migration->size;
-    migr_reg->fd = migration->fd;
+    migr_reg->size = sizeof(struct vfio_device_migration_info) + size;
+    migr_reg->fd = fd;
 
-    vfu_ctx->migration = init_migration(migration, &ret);
+    vfu_ctx->migration = init_migration(callbacks, migr_reg->size, &ret);
     if (vfu_ctx->migration == NULL) {
         vfu_log(vfu_ctx, LOG_ERR, "failed to initialize device migration");
         free(migr_reg->mmap_areas);
