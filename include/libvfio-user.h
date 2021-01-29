@@ -427,6 +427,7 @@ typedef struct {
     vfu_migration_callbacks_t   callbacks;
     struct iovec                *mmap_areas;
     uint32_t                    nr_mmap_areas;
+    int                         fd;
 } vfu_migration_t;
 
 //TODO: Re-visit once migration support is done.

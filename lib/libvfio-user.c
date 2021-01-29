@@ -1370,6 +1370,7 @@ vfu_setup_device_migration(vfu_ctx_t *vfu_ctx, vfu_migration_t *migration)
 
     migr_reg->flags = VFU_REGION_FLAG_RW;
     migr_reg->size = sizeof(struct vfio_device_migration_info) + migration->size;
+    migr_reg->fd = migration->fd;
 
     vfu_ctx->migration = init_migration(migration, &ret);
     if (vfu_ctx->migration == NULL) {

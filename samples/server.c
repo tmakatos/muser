@@ -404,14 +404,14 @@ int main(int argc, char *argv[])
     bool verbose = false;
     char opt;
     struct sigaction act = {.sa_handler = _sa_handler};
-    size_t bar1_size = 0x3000;
+    const size_t bar1_size = 0x3000, migr_size = bar1_size + sizeof(time_t);
     struct server_data server_data = {
         .migration = {
             .state = VFU_MIGR_STATE_RUNNING
         }
     };
     vfu_ctx_t *vfu_ctx;
-    FILE *fp;
+    FILE *bar1_fp, *migr_fp;
 
     while ((opt = getopt(argc, argv, "v")) != -1) {
         switch (opt) {
@@ -463,15 +463,15 @@ int main(int argc, char *argv[])
      * this under Linux. If we really want to prohibit it we have to use
      * separate files for the same region.
      */
-    if ((fp = tmpfile()) == NULL) {
+    if ((bar1_fp = tmpfile()) == NULL) {
         err(EXIT_FAILURE, "failed to create BAR1 file");
     }
     server_data.bar1_size = bar1_size;
-    if (ftruncate(fileno(fp), server_data.bar1_size) == -1) {
+    if (ftruncate(fileno(bar1_fp), server_data.bar1_size) == -1) {
         err(EXIT_FAILURE, "failed to truncate BAR1 file");
     }
     server_data.bar1 = mmap(NULL, server_data.bar1_size, PROT_READ | PROT_WRITE,
-                            MAP_SHARED, fileno(fp), 0);
+                            MAP_SHARED, fileno(bar1_fp), 0);
     if (server_data.bar1 == MAP_FAILED) {
         err(EXIT_FAILURE, "failed to mmap BAR1");
     }
@@ -481,7 +481,7 @@ int main(int argc, char *argv[])
     };
     ret = vfu_setup_region(vfu_ctx, VFU_PCI_DEV_BAR1_REGION_IDX,
                            server_data.bar1_size, &bar1_access,
-                           VFU_REGION_FLAG_RW, mmap_areas, 2, fileno(fp));
+                           VFU_REGION_FLAG_RW, mmap_areas, 2, fileno(bar1_fp));
     if (ret < 0) {
         err(EXIT_FAILURE, "failed to setup BAR1 region");
     }
@@ -501,8 +501,20 @@ int main(int argc, char *argv[])
         err(EXIT_FAILURE, "failed to setup irq counts");
     }
 
+    if ((migr_fp = tmpfile()) == NULL) {
+        err(EXIT_FAILURE, "failed to create migration file");
+    }
+    if (ftruncate(fileno(migr_fp), migr_size) == -1) {
+        err(EXIT_FAILURE, "failed to truncate migration file");
+    }
+    server_data.bar1 = mmap(NULL, server_data.bar1_size, PROT_READ | PROT_WRITE,
+                            MAP_SHARED, fileno(bar1_fp), 0);
+    if (server_data.bar1 == MAP_FAILED) {
+        err(EXIT_FAILURE, "failed to mmap migration file");
+    }
+
     vfu_migration_t migration = {
-        .size = bar1_size + sizeof(time_t),
+        .size = migr_size,
         .mmap_areas = mmap_areas,
         .nr_mmap_areas = 2,
         .callbacks = {
@@ -512,7 +524,8 @@ int main(int argc, char *argv[])
             .read_data = &migration_read_data,
             .data_written = &migration_data_written,
             .write_data = &migration_write_data
-        }
+        },
+        .fd = fileno(migr_fp)
     };
 
     ret = vfu_setup_device_migration(vfu_ctx, &migration);
