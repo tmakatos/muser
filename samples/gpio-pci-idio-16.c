@@ -218,7 +218,8 @@ main(int argc, char *argv[])
     ret = vfu_run_ctx(vfu_ctx);
     if (ret != 0) {
         if (ret != -ENOTCONN && ret != -EINTR) {
-            fprintf(stderr, "failed to realize device emulation\n");
+            fprintf(stderr, "failed to realize device emulation: %s\n",
+                    strerror(-ret));
             goto out;
         }
         ret = 0;
