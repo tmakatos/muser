@@ -29,7 +29,10 @@
  *
  */
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <err.h>
 #include <stdlib.h>
@@ -86,7 +89,7 @@ arm_timer(vfu_ctx_t *vfu_ctx, time_t t)
     return 0;
 }
 
-ssize_t
+static ssize_t
 bar0_access(vfu_ctx_t *vfu_ctx, char * const buf, size_t count, loff_t offset,
             const bool is_write)
 {
@@ -115,7 +118,7 @@ bar0_access(vfu_ctx_t *vfu_ctx, char * const buf, size_t count, loff_t offset,
     return count;
 }
 
-ssize_t
+static ssize_t
 bar1_access(vfu_ctx_t *vfu_ctx, char * const buf,
             size_t count, loff_t offset,
             const bool is_write)
@@ -190,7 +193,8 @@ unmap_dma(vfu_ctx_t *vfu_ctx, uint64_t iova, uint64_t len)
     return -EINVAL;
 }
 
-void get_md5sum(unsigned char *buf, int len, unsigned char *md5sum)
+static void
+get_md5sum(unsigned char *buf, int len, unsigned char *md5sum)
 {
 	MD5_CTX ctx;
 
@@ -358,7 +362,6 @@ migration_write_data(vfu_ctx_t *vfu_ctx, void *data, __u64 size, __u64 offset)
 {
     struct server_data *server_data = vfu_get_private(vfu_ctx);
     char *buf = data;
-    int ret;
 
     assert(server_data != NULL);
     assert(data != NULL);
@@ -381,7 +384,7 @@ migration_write_data(vfu_ctx_t *vfu_ctx, void *data, __u64 size, __u64 offset)
         return -1;
     }
     memcpy(&server_data->bar0, buf, sizeof server_data->bar0);
-    ret = bar0_access(vfu_ctx, buf, sizeof server_data->bar0, 0, true);
+    bar0_access(vfu_ctx, buf, sizeof server_data->bar0, 0, true);
     assert(ret == (int)size); /* FIXME */
 
     return 0;
@@ -401,13 +404,13 @@ migration_data_written(UNUSED vfu_ctx_t *vfu_ctx, UNUSED __u64 count)
     return 0;
 }
 
-size_t
+static size_t
 nr_pages(size_t size)
 {
     return (size / sysconf(_SC_PAGE_SIZE) + (size % sysconf(_SC_PAGE_SIZE) > 1));
 }
 
-size_t
+static size_t
 page_align(size_t size) {
     return  nr_pages(size) * sysconf(_SC_PAGE_SIZE);
 }

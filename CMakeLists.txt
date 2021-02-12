@@ -44,6 +44,7 @@ include_directories(${CMAKE_SOURCE_DIR}/lib)
 include_directories(${JSON_INCLUDE_DIRS})
 
 set(CMAKE_C_FLAGS_DEBUG "-O0 -ggdb")
+
 #
 # NB: this intentionally does not define NDEBUG: we want our assert()s even in a
 # release build.
@@ -51,7 +52,7 @@ set(CMAKE_C_FLAGS_DEBUG "-O0 -ggdb")
 set(CMAKE_C_FLAGS_RELEASE "-O3")
 
 set(CMAKE_C_FLAGS
-    "${CMAKE_C_FLAGS} -Wall -Werror -Wextra -Wno-missing-field-initializers")
+    "${CMAKE_C_FLAGS} -Wall -Werror -Wextra -Wno-missing-field-initializers -Wmissing-declarations")
 
 # public headers
 add_subdirectory(include)
@@ -62,5 +63,7 @@ add_subdirectory(lib)
 # samples
 add_subdirectory(samples)
 
-# test
-add_subdirectory(test)
+if (CMAKE_BUILD_TYPE STREQUAL Debug)
+    # test
+    add_subdirectory(test)
+endif()

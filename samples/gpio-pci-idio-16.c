@@ -51,7 +51,7 @@ _log(vfu_ctx_t *vfu_ctx UNUSED, UNUSED int level, char const *msg)
     fprintf(stderr, "gpio: %s\n", msg);
 }
 
-ssize_t
+static ssize_t
 bar2_access(vfu_ctx_t *vfu_ctx UNUSED, char * const buf,
             size_t count, loff_t offset, const bool is_write)
 {

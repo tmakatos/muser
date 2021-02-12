@@ -237,7 +237,8 @@ handle_device_state(vfu_ctx_t *vfu_ctx, struct migration *migr,
             ret = migr->callbacks.transition(vfu_ctx, VFU_MIGR_STATE_RESUME);
             break;
         default:
-            assert(false);
+            /* FIXME */
+            return -EINVAL;
     }
 
     if (ret == 0) {

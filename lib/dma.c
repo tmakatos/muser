@@ -90,7 +90,7 @@ dma_controller_create(vfu_ctx_t *vfu_ctx, int max_regions)
     return dma;
 }
 
-void
+static void
 _dma_controller_do_remove_region(dma_controller_t *dma,
                                  dma_memory_region_t *region)
 {
@@ -417,7 +417,7 @@ out:
     return cnt;
 }
 
-ssize_t _get_bitmap_size(size_t region_size, size_t pgsize)
+static ssize_t _get_bitmap_size(size_t region_size, size_t pgsize)
 {
     if (pgsize == 0) {
         return -EINVAL;

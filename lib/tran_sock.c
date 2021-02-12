@@ -30,7 +30,10 @@
  *
  */
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -503,6 +506,9 @@ out:
 
 int
 recv_version(vfu_ctx_t *vfu_ctx, int sock, uint16_t *msg_idp,
+             struct vfio_user_version **versionp);
+int
+recv_version(vfu_ctx_t *vfu_ctx, int sock, uint16_t *msg_idp,
              struct vfio_user_version **versionp)
 {
     struct vfio_user_version *cversion = NULL;
@@ -600,6 +606,10 @@ out:
     *versionp = cversion;
     return ret;
 }
+
+int
+send_version(vfu_ctx_t *vfu_ctx, int sock, uint16_t msg_id,
+             struct vfio_user_version *cversion);
 
 int
 send_version(vfu_ctx_t *vfu_ctx, int sock, uint16_t msg_id,
