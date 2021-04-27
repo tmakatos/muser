@@ -980,6 +980,10 @@ MOCK_DEFINE(process_request)(vfu_ctx_t *vfu_ctx)
          */
         ret = 0;
     } else {
+        if (iovecs == NULL) {
+            iovecs = _iovecs;
+            nr_iovecs = 1;
+        }
         ret = vfu_ctx->tran->reply(vfu_ctx, hdr.msg_id, iovecs, nr_iovecs,
                                    fds_out, nr_fds_out, ret == 0 ? 0 : errno);
 
