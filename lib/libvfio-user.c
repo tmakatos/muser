@@ -578,7 +578,7 @@ handle_device_reset(vfu_ctx_t *vfu_ctx)
 static int
 handle_dirty_pages_get(vfu_ctx_t *vfu_ctx,
                        struct iovec **iovecs, size_t *nr_iovecs,
-                       struct vfio_iommu_type1_dirty_bitmap_get *ranges,
+                       struct vfio_user_bitmap_range *ranges,
                        uint32_t size)
 {
     int ret = EINVAL;
@@ -589,17 +589,17 @@ handle_dirty_pages_get(vfu_ctx_t *vfu_ctx,
     assert(nr_iovecs != NULL);
     assert(ranges != NULL);
 
-    if (size % sizeof(struct vfio_iommu_type1_dirty_bitmap_get) != 0) {
+    if (size % sizeof(struct vfio_user_bitmap_range) != 0) {
         return ERROR_INT(EINVAL);
     }
-    *nr_iovecs = 1 + size / sizeof(struct vfio_iommu_type1_dirty_bitmap_get);
+    *nr_iovecs = 1 + size / sizeof(struct vfio_user_bitmap_range);
     *iovecs = malloc(*nr_iovecs * sizeof(struct iovec));
     if (*iovecs == NULL) {
         return -1;
     }
 
     for (i = 1; i < *nr_iovecs; i++) {
-        struct vfio_iommu_type1_dirty_bitmap_get *r = &ranges[(i - 1)]; /* FIXME ugly indexing */
+        struct vfio_user_bitmap_range *r = &ranges[(i - 1)]; /* FIXME ugly indexing */
         ret = dma_controller_dirty_page_get(vfu_ctx->dma,
                                             (vfu_dma_addr_t)r->iova,
                                             r->size, r->bitmap.pgsize,
@@ -636,8 +636,14 @@ MOCK_DEFINE(handle_dirty_pages)(vfu_ctx_t *vfu_ctx, uint32_t size,
     assert(nr_iovecs != NULL);
     assert(dirty_bitmap != NULL);
 
-    if (size < sizeof(*dirty_bitmap) || size != dirty_bitmap->argsz) {
+    if (size < sizeof(*dirty_bitmap)) {
         vfu_log(vfu_ctx, LOG_ERR, "invalid header size %u", size);
+        return ERROR_INT(EINVAL);
+    }
+
+    if (size != dirty_bitmap->argsz) {
+        vfu_log(vfu_ctx, LOG_WARNING, "invalid header size %u (argsz=%u)",
+                size, dirty_bitmap->argsz);
         return ERROR_INT(EINVAL);
     }
 
@@ -649,7 +655,7 @@ MOCK_DEFINE(handle_dirty_pages)(vfu_ctx_t *vfu_ctx, uint32_t size,
         ret = 0;
     } else if (dirty_bitmap->flags & VFIO_IOMMU_DIRTY_PAGES_FLAG_GET_BITMAP) {
         ret = handle_dirty_pages_get(vfu_ctx, iovecs, nr_iovecs,
-                                     (struct vfio_iommu_type1_dirty_bitmap_get*)(dirty_bitmap + 1),
+                                     (struct vfio_user_bitmap_range*)(dirty_bitmap + 1),
                                      size - sizeof(*dirty_bitmap));
     } else {
         vfu_log(vfu_ctx, LOG_ERR, "bad flags %#x", dirty_bitmap->flags);
