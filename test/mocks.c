@@ -44,6 +44,7 @@
 #include "mocks.h"
 #include "private.h"
 #include "tran_sock.h"
+#include "migration_priv.h"
 
 struct function
 {
@@ -68,6 +69,7 @@ static struct function funcs[] = {
     { .name = "process_request" },
     { .name = "should_exec_command" },
     { .name = "tran_sock_send_iovec" },
+    { .name = "migration_region_access_registers" },
     /* system libs */
     { .name = "bind" },
     { .name = "close" },
@@ -278,6 +280,22 @@ handle_dirty_pages(vfu_ctx_t *vfu_ctx, uint32_t size,
     check_expected(iovecs);
     check_expected(nr_iovecs);
     check_expected(dirty_bitmap);
+    return mock();
+}
+
+ssize_t
+migration_region_access_registers(vfu_ctx_t *vfu_ctx, char *buf, size_t count,
+                                  loff_t pos, bool is_write)
+{
+    if (!is_patched("migration_region_access_registers")) {
+        return __real_migration_region_access_registers(vfu_ctx, buf, count,
+                                                        pos, is_write);
+    }
+    check_expected(vfu_ctx);
+    check_expected(buf);
+    check_expected(count);
+    check_expected(pos);
+    check_expected(is_write);
     return mock();
 }
 
