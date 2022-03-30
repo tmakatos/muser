@@ -5,7 +5,7 @@ vfio-user Protocol Specification
 ********************************
 
 --------------
-Version_ 0.9.1
+Version_ 0.9.2
 --------------
 
 .. contents:: Table of Contents
@@ -366,7 +366,8 @@ Name                                    Command    Request Direction
 ``VFIO_USER_DMA_WRITE``                 12         server -> client
 ``VFIO_USER_DEVICE_RESET``              13         client -> server
 ``VFIO_USER_DIRTY_PAGES``               14         client -> server
-======================================  =========  =================
+``VFIO_USER_DEVICE_FEATURE``            15         client -> server
+=====================================   =========  =================
 
 Header
 ------
@@ -933,8 +934,7 @@ The VFIO region info type is defined in ``<linux/vfio.h>``
 | subtype | 4      | 4    |
 +---------+--------+------+
 
-The only device-specific region type and subtype supported by vfio-user is
-``VFIO_REGION_TYPE_MIGRATION`` (3) and ``VFIO_REGION_SUBTYPE_MIGRATION`` (1).
+vfio-user does not support a device-specific region type and/or subtype.
 
 ``VFIO_USER_DEVICE_GET_REGION_IO_FDS``
 --------------------------------------
@@ -1589,178 +1589,185 @@ For ``VFIO_IOMMU_DIRTY_PAGES_FLAG_GET_BITMAP``, the reply payload is as follows:
   defined in `VFIO Bitmap Range Format`_.
 * *bitmap* is the actual dirty pages bitmap corresponding to the range request
 
-VFIO Device Migration Info
---------------------------
 
-A device may contain a migration region (of type
-``VFIO_REGION_TYPE_MIGRATION``).  The beginning of the region must contain
-``struct vfio_device_migration_info``, defined in ``<linux/vfio.h>``. This
-subregion is accessed like any other part of a standard vfio-user region
-using ``VFIO_USER_REGION_READ``/``VFIO_USER_REGION_WRITE``.
+``VFIO_USER_DEVICE_FEATURE``
+----------------------------
 
-+---------------+--------+-----------------------------+
-| Name          | Offset | Size                        |
-+===============+========+=============================+
-| device_state  | 0      | 4                           |
-+---------------+--------+-----------------------------+
-|               | +-----+----------------------------+ |
-|               | | Bit | Definition                 | |
-|               | +=====+============================+ |
-|               | | 0   | VFIO_DEVICE_STATE_RUNNING  | |
-|               | +-----+----------------------------+ |
-|               | | 1   | VFIO_DEVICE_STATE_SAVING   | |
-|               | +-----+----------------------------+ |
-|               | | 2   | VFIO_DEVICE_STATE_RESUMING | |
-|               | +-----+----------------------------+ |
-+---------------+--------+-----------------------------+
-| reserved      | 4      | 4                           |
-+---------------+--------+-----------------------------+
-| pending_bytes | 8      | 8                           |
-+---------------+--------+-----------------------------+
-| data_offset   | 16     | 8                           |
-+---------------+--------+-----------------------------+
-| data_size     | 24     | 8                           |
-+---------------+--------+-----------------------------+
+This command message is sent by the client to server to get, set, or probe
+device features.
+FIXME expand on what device features ares.
 
-* *device_state* defines the state of the device:
+Request
+^^^^^^^
 
-  The client initiates device state transition by writing the intended state.
-  The server must respond only after it has successfully transitioned to the new
-  state. If an error occurs then the server must respond to the
-  ``VFIO_USER_REGION_WRITE`` operation with the Error field set accordingly and
-  must remain at the previous state, or in case of internal error it must
-  transition to the error state, defined as
-  ``VFIO_DEVICE_STATE_RESUMING | VFIO_DEVICE_STATE_SAVING``. The client must
-  re-read the device state in order to determine it afresh.
+The request payload for this message is a structure of the following format:
 
-  The following device states are defined:
++-------+--------+----------------------------------+
+| Name  | Offset | Size                             |
++=======+========+==================================+
+| argsz | 0      | 4                                |
++-------+--------+----------------------------------+
+| flags | 4      | 4                                |
++-------+--------+----------------------------------+
+|       | +------+--------------------------------+ |
+|       | | Bit  | Definition                     | |
+|       | +======+================================+ |
+|       | | 0-15 | ``VFIO_DEVICE_FEATURE_MASK``   | |
+|       | +------+--------------------------------+ |
+|       | | 16   | ``VFIO_DEVICE_FEATURE_SET``    | |
+|       | +------+--------------------------------+ |
+|       | | 17   | ``VFIO_DEVICE_FEATURE_GET``    | |
+|       | +------+--------------------------------+ |
+|       | | 18   | ``VFIO_DEVICE_FEATURE_PROBE``  | |
+|       | +------+--------------------------------+ |
++-------+--------+----------------------------------+
+| data  | 8      |                                  |
++-------+--------+----------------------------------+
 
-  +-----------+---------+----------+-----------------------------------+
-  | _RESUMING | _SAVING | _RUNNING | Description                       |
-  +===========+=========+==========+===================================+
-  | 0         | 0       | 0        | Device is stopped.                |
-  +-----------+---------+----------+-----------------------------------+
-  | 0         | 0       | 1        | Device is running, default state. |
-  +-----------+---------+----------+-----------------------------------+
-  | 0         | 1       | 0        | Stop-and-copy state               |
-  +-----------+---------+----------+-----------------------------------+
-  | 0         | 1       | 1        | Pre-copy state                    |
-  +-----------+---------+----------+-----------------------------------+
-  | 1         | 0       | 0        | Resuming                          |
-  +-----------+---------+----------+-----------------------------------+
-  | 1         | 0       | 1        | Invalid state                     |
-  +-----------+---------+----------+-----------------------------------+
-  | 1         | 1       | 0        | Error state                       |
-  +-----------+---------+----------+-----------------------------------+
-  | 1         | 1       | 1        | Invalid state                     |
-  +-----------+---------+----------+-----------------------------------+
+* *argsz* is the size of the above structure. If ``VFIO_DEVICE_FEATURE_SET`` is
+  set then *argsz* also includes the size of the payload found in *data*.
 
-  Valid state transitions are shown in the following table:
+* *flags* contains the following attributes:
 
-  +-------------------------+---------+---------+---------------+----------+----------+
-  | |darr| From / To |rarr| | Stopped | Running | Stop-and-copy | Pre-copy | Resuming |
-  +=========================+=========+=========+===============+==========+==========+
-  | Stopped                 |    \-   |    1    |       0       |    0     |     0    |
-  +-------------------------+---------+---------+---------------+----------+----------+
-  | Running                 |    1    |    \-   |       1       |    1     |     1    |
-  +-------------------------+---------+---------+---------------+----------+----------+
-  | Stop-and-copy           |    1    |    1    |       \-      |    0     |     0    |
-  +-------------------------+---------+---------+---------------+----------+----------+
-  | Pre-copy                |    0    |    0    |       1       |    \-    |     0    |
-  +-------------------------+---------+---------+---------------+----------+----------+
-  | Resuming                |    0    |    1    |       0       |    0     |     \-   |
-  +-------------------------+---------+---------+---------------+----------+----------+
+  * *``VFIO_DEVICE_FEATURE_SET``* sets feature from data.
 
-  A device is migrated to the destination as follows:
+  * *``VFIO_DEVICE_FEATURE_GET``* gets feature into data.
 
-  * The source client transitions the device state from the running state to
-    the pre-copy state. This transition is optional for the client but must be
-    supported by the server. The source server starts sending device state data
-    to the source client through the migration region while the device is
-    running.
+  * *``VFIO_DEVICE_FEATURE_PROBE``* probes feature support.
 
-  * The source client transitions the device state from the running state or the
-    pre-copy state to the stop-and-copy state. The source server stops the
-    device, saves device state and sends it to the source client through the
-    migration region.
+The VFIO device feature structure is defined in ``<linux/vfio.h>``
+(``struct vfio_device_feature``).
 
-  The source client is responsible for sending the migration data to the
-  destination client.
+The feature is selected using ``VFIO_DEVICE_FEATURE_PROBE`` in flags.  Support
+for a feature is probed by setting ``VFIO_DEVICE_FEATURE_MASK`` and
+``VFIO_DEVICE_FEATURE_PROBE``.  A probe may optionally include
+``VFIO_DEVICE_FEATURE_GET`` and/or ``VFIO_DEVICE_FEATURE_GET`` to determine
+read vs write access of the feature, respectively.  Probing a feature will
+return success if the feature is supported and all of the optionally indicated
+methods are supported. The format of the data portion of the structure is
+specific to the given feature. The data portion is not required for probing.
+``VFIO_DEVICE_FEATURE_SET`` and ``VFIO_DEVICE_FEATURE_GET`` are mutually
+exclusive, except for use with ``VFIO_DEVICE_FEATURE_PROBE``.
 
-  A device is resumed on the destination as follows:
+Reply
+^^^^^
 
-  * The destination client transitions the device state from the running state
-    to the resuming state. The destination server uses the device state data
-    received through the migration region to resume the device.
+For setting and probing a feature, the reply payload must be the same as the
+request payload. For getting a feature, the reply payload must be the same as
+the request payload plus:
 
-  * The destination client provides saved device state to the destination
-    server and then transitions the device to back to the running state.
+* any feature data must be included in the data segment
 
-* *reserved* This field is reserved and any access to it must be ignored by the
-  server.
+* the size of the feature data must be added to *argsz* in the reply.
 
-* *pending_bytes* Remaining bytes to be migrated by the server. This field is
-  read only.
+Device Features
+^^^^^^^^^^^^^^^
 
-* *data_offset* Offset in the migration region where the client must:
+The following table enumerates the device features support by vfio-user,
+defined in ``<linux/vfio.h>``:
 
-  * read from, during the pre-copy or stop-and-copy state, or
+========================================  =========
+Name                                      Command
+========================================  =========
+``VFIO_DEVICE_FEATURE_MIGRATION``         1
+``VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE``  2
+========================================  ========
 
-  * write to, during the resuming state.
+The only device features vfio-user currently supports are related to live
+migration.
 
-  This field is read only.
+``VFIO_DEVICE_FEATURE_MIGRATION``
+"""""""""""""""""""""""""""""""""
 
-* *data_size* Contains the size, in bytes, of the amount of data copied to:
+Indicates that the device supports the migration API via
+``VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE``. FIXME only for GET.
 
-  * the source migration region by the source server during the pre-copy or
-    stop-and copy state, or
+There is no additional payload for the data portion of the
+``VFIO_USER_DEVICE_FEATURE`` request message.
+The payload in the data portion of the ``VFIO_USER_DEVICE_FEATURE`` reply
+message is a structure with the following format:
 
-  * the destination migration region by the destination client during the
-    resuming state.
++-------+--------+-------------------------------+
+| Name  | Offset | Size                          |
++=======+========+===============================+
+| flags | 0      | 8                             |
++-------+--------+-------------------------------+
+|       | +-----+------------------------------+ |
+|       | | Bit | Definition                   | |
+|       | +=====+==============================+ |
+|       | | 0   | ``VFIO_MIGRATION_STOP_COPY`` | |
+|       | +-----+------------------------------+ |
++-------+----------------------------------------+
 
-Device-specific data must be stored at any position after
-``struct vfio_device_migration_info``. Note that the migration region can be
-memory mappable, even partially. In practise, only the migration data portion
-can be memory mapped.
+If getting this feature succeeds then the device supports at least the running
+and error states. Additional states are indicated via the flags field.
 
-The client processes device state data during the pre-copy and the
-stop-and-copy state in the following iterative manner:
+The VFIO structure for accessing the device state is defined in
+``<linux/vfio.h>`` (``struct vfio_device_feature_migration``).
 
-  1. The client reads ``pending_bytes`` to mark a new iteration. Repeated reads
-     of this field is an idempotent operation. If there are no migration data
-     to be consumed then the next step depends on the current device state:
+``VFIO_DEVICE_FEATURE_MIG_DEVICE_STATE``
+""""""""""""""""""""""""""""""""""""""""
 
-     * pre-copy: the client must try again.
+This feature is used by the client to get or set the migration state of the
+device. Migration states are explained in `Migration States`_.
 
-     * stop-and-copy: this procedure can end and the device can now start
-       resuming on the destination.
+When used with ``VFIO_DEVICE_FEATURE_GET``, the server must return the
+migration state in *device_state*.
 
-  2. The client reads ``data_offset``; at this point the server must make
-     available a portion of migration data at this offset to be read by the
-     client, which must happen *before* completing the read operation. The
-     amount of data to be read must be stored in the ``data_size`` field, which
-     the client reads next.
+When used with ``VFIO_DEVICE_FEATURE_SET``, the server must set the migration
+state to *device_state*. The server must fully transition to the new state
+before replying. The server must not transition to any other migration state
+outside the manipulation of the client. If the server fails to transition to
+the new state then the migration state must be either the original state or
+any other state aloing the combination transition path. The client can either
+reset the device or attempt to change the state.
 
-  3. The client reads ``data_size`` to determine the amount of migration data
-     available.
+The request payload for this message is a structure of the following format:
 
-  4. The client reads and processes the migration data.
++-------------+--------+------+
+| Name        | Offset | Size |
++=============+========+======+
+| device_sate | 0      | 4    |
++-------------+--------+------+
+| data_fd     | 4      | 4    |
++-------------+--------+------+
 
-  5. Go to step 1.
+*device_state* contains the migration state to get or set.
 
-Note that the client can transition the device from the pre-copy state to the
-stop-and-copy state at any time; ``pending_bytes`` does not need to become zero.
+*data_fd* is unused in vfio-user.
 
-The client initializes the device state on the destination by setting the
-device state in the resuming state and writing the migration data to the
-destination migration region at ``data_offset`` offset. The client can write the
-source migration data in an iterative manner and the server must consume this
-data before completing each write operation, updating the ``data_offset`` field.
-The server must apply the source migration data on the device resume state. The
-client must write data on the same order and transaction size as read.
+FIXME need to decide whether we'll use a new FD (passed in the ancillary data
+instead of data_fd). The main problem here is that passing of FDs is not always
+available, so we would need new messages to read/write migration data. If we do
+want to pass an FD, it seem that a pipe is the best approach since the server
+only produces data and the client only consumes data.  For non-FD transfers, we
+can abuse the protocol as follows: if the current state is STOP_COPY and
+VFIO_DEVICE_FEATURE_GET is sent from the client to server with argsz larger
+than vfio-user header + struct vfio_device_feature_migration, then the server
+can include migration data in whatever is left in argsz (argsz - (vfio-user
+header + struct vfio_device_feature_migration)). The client must keep doing
+this until the server has no more data to send, in which case argsz in the
+reponse equals vfio-user header + struct vfio_device_feature_migration
 
-If an error occurs then the server must fail the read or write operation. It is
-an implementation detail of the client how to handle errors.
+
+.. _Migration States:
+
+There are 5 states to support ``VFIO_MIGRATION_STOP_COPY``, defined in
+``<linux/vfio.h>`` (``vfio_device_mig_state``):
+
+=================================  =====  =========================================================
+Name                               State  Description
+=================================  =====  ========================================================= 
+``VFIO_DEVICE_STATE_ERROR``         0     The device has failed and must be reset 
+``VFIO_DEVICE_STATE_STOP``          1     The device does not change the internal or external state
+``VFIO_DEVICE_STATE_RUNNING``       2     The device is running normally
+``VFIO_DEVICE_STATE_STOP_COPY``     3     The device internal state can be read out
+``VFIO_DEVICE_STATE_RESUMING``      4     The device is stopped and is loading a new internal state
+``VFIO_DEVICE_STATE_RUNNING_P2P``   5 
+=================================  =====  =========================================================
+
+FIXME the direct transition are explained in <linux/vfio.h>, not sure how to
+replicate them here other than pretty much having a verbatim copy?
 
 Appendices
 ==========
