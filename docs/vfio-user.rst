@@ -367,6 +367,8 @@ Name                                    Command    Request Direction
 ``VFIO_USER_DEVICE_RESET``              13         client -> server
 ``VFIO_USER_DIRTY_PAGES``               14         client -> server
 ``VFIO_USER_DEVICE_FEATURE``            15         client -> server
+``VFIO_USER_READ_MIG_DATA``             16         client -> server
+``VFIO_USER_WRITE_MIG_DATA``            17         client -> server
 =====================================   =========  =================
 
 Header
@@ -1697,6 +1699,8 @@ message is a structure with the following format:
 |       | +=====+==============================+ |
 |       | | 0   | ``VFIO_MIGRATION_STOP_COPY`` | |
 |       | +-----+------------------------------+ |
+|       | | 1   | ``VFIO_MIGRATION_P2P``       | |
+|       | +-----+------------------------------+ |
 +-------+----------------------------------------+
 
 If getting this feature succeeds then the device supports at least the running
@@ -1736,20 +1740,6 @@ The request payload for this message is a structure of the following format:
 
 *data_fd* is unused in vfio-user.
 
-FIXME need to decide whether we'll use a new FD (passed in the ancillary data
-instead of data_fd). The main problem here is that passing of FDs is not always
-available, so we would need new messages to read/write migration data. If we do
-want to pass an FD, it seem that a pipe is the best approach since the server
-only produces data and the client only consumes data.  For non-FD transfers, we
-can abuse the protocol as follows: if the current state is STOP_COPY and
-VFIO_DEVICE_FEATURE_GET is sent from the client to server with argsz larger
-than vfio-user header + struct vfio_device_feature_migration, then the server
-can include migration data in whatever is left in argsz (argsz - (vfio-user
-header + struct vfio_device_feature_migration)). The client must keep doing
-this until the server has no more data to send, in which case argsz in the
-reponse equals vfio-user header + struct vfio_device_feature_migration
-
-
 .. _Migration States:
 
 There are 5 states to support ``VFIO_MIGRATION_STOP_COPY``, defined in
@@ -1766,8 +1756,98 @@ Name                               State  Description
 ``VFIO_DEVICE_STATE_RUNNING_P2P``   5 
 =================================  =====  =========================================================
 
-FIXME the direct transition are explained in <linux/vfio.h>, not sure how to
-replicate them here other than pretty much having a verbatim copy?
+Direct State Transitions
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+FIXME the direct transitions are explained in <linux/vfio.h>, not sure how to
+replicate them here other than pretty much having a verbatim copy? In any case
+we have to document them.
+
+Complete State Transitions
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Are these the _only_ state transitions that need to be supported by the server?
+Is it the client's responsibility to support composite state transitions?
+Looking at how vfio_mig_get_next_state() is used, it's called by the specific
+driver implementations.
+It looks like we have to document the table of vfio_mig_get_next_state() in the
+spec so that the client can follow it.
+
+
+``VFIO_USER_MIG_DATA_READ``
+---------------------------
+
+This command message is sent by the client to the source migration server to
+read migration date while the server is in ``VFIO_DEVICE_STATE_STOP_COPY``
+state. Using this command in any other migration state is undefined.
+
+Request
+^^^^^^^
+
+The request payload for this message is a structure of the following format:
+
++-------+--------+------+
+| Name  | Offset | Size |
++=======+========+======+
+| argsz | 0      | 4    |
++=======+========+======+
+| size  | 0      | 4    |
++-------+--------+------+
+
+* *argsz* is the size of the above structure.
+
+* *size* is the size of the migration data to be read.
+
+Reply
+^^^^^
+
+The reply payload is a structure of the same format as the request payload,
+except that:
+
+* *size* indicates the amount of migration data returned by the
+  server, which can be less than requested, in which case there is no more
+  migration data to be read.
+
+* *argsz* contains the size of the migration data sent by the server, therefore
+  *argsz* == *size* + 4.
+
+The migration data immediatelly follows the above structure.
+
+``VFIO_USER_MIG_DATA_WRITE``
+----------------------------
+
+This command message is sent by the client to the destination migration server
+to write migration date while the destination server is in
+``VFIO_DEVICE_STATE_RESUMING`` state. Using this command in any other migration
+state is undefined.
+
+
+Request
+^^^^^^^
+
+The request payload for this message is a structure of the following format:
+
++-------+--------+------+
+| Name  | Offset | Size |
++=======+========+======+
+| argsz | 0      | 4    |
++=======+========+======+
+| size  | 0      | 4    |
++-------+--------+------+
+
+* *argsz* is the size of the above structure plus the size of the migration
+  data being written.
+
+* *size* is the size of the migration data to be written.
+
+The migration data to be written immediatelly follows this structure.
+Note that *argsz* == 4 + *argsz*.
+
+Reply
+^^^^^
+
+There is no reply payload for this message.
+
 
 Appendices
 ==========
