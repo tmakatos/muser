@@ -366,10 +366,12 @@ Name                                    Command    Request Direction
 ``VFIO_USER_DMA_WRITE``                 12         server -> client
 ``VFIO_USER_DEVICE_RESET``              13         client -> server
 ``VFIO_USER_DIRTY_PAGES``               14         client -> server
+=====================================   =========  =================
+
 ``VFIO_USER_DEVICE_FEATURE``            15         client -> server
 ``VFIO_USER_READ_MIG_DATA``             16         client -> server
 ``VFIO_USER_WRITE_MIG_DATA``            17         client -> server
-=====================================   =========  =================
+
 
 Header
 ------
