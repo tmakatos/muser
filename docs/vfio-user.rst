@@ -1646,7 +1646,7 @@ The VFIO device feature structure is defined in ``<linux/vfio.h>``
 The feature is selected using ``VFIO_DEVICE_FEATURE_PROBE`` in flags.  Support
 for a feature is probed by setting ``VFIO_DEVICE_FEATURE_MASK`` and
 ``VFIO_DEVICE_FEATURE_PROBE``.  A probe may optionally include
-``VFIO_DEVICE_FEATURE_GET`` and/or ``VFIO_DEVICE_FEATURE_GET`` to determine
+``VFIO_DEVICE_FEATURE_GET`` and/or ``VFIO_DEVICE_FEATURE_SET`` to determine
 read vs write access of the feature, respectively.  Probing a feature will
 return success if the feature is supported and all of the optionally indicated
 methods are supported. The format of the data portion of the structure is
